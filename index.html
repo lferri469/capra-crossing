@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Capra Crossing 🐐</title>
+<link rel="stylesheet" href="css/style.css">
+<script>
+window.addEventListener('error', (e) => {
+  const m = encodeURIComponent(`${e.message} @ ${e.filename}:${e.lineno}`.slice(0, 400));
+  fetch(`/__err?m=${m}`).catch(() => {});
+});
+window.addEventListener('unhandledrejection', (e) => {
+  const m = encodeURIComponent(String(e.reason && e.reason.stack || e.reason).slice(0, 400));
+  fetch(`/__rej?m=${m}`).catch(() => {});
+});
+</script>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.min.js" } }
+</script>
+</head>
+<body>
+<div id="game-container">
+  <canvas id="game-canvas"></canvas>
+
+  <div id="hud">
+    <div id="score">0</div>
+    <div id="best">RECORD 0</div>
+    <div id="coins-hud">🪙 0</div>
+  </div>
+
+  <div id="title-screen" class="overlay">
+    <h1>CAPRA<br>CROSSING</h1>
+    <p class="subtitle">Porta la capra piu' lontano che puoi!</p>
+    <p id="loading-text">Caricamento asset...</p>
+    <div class="controls-hint">
+      <span>⬆️⬇️⬅️➡️ / WASD &nbsp;–&nbsp; salta</span>
+      <span>📱 swipe per muoverti — 🦅 se ti fermi troppo, l'aquila ti prende!</span>
+    </div>
+    <div id="skin-shop">
+      <div id="title-coins">🪙 0</div>
+      <div id="skin-row"></div>
+    </div>
+    <p class="blink">PREMI UN TASTO O TOCCA PER INIZIARE</p>
+  </div>
+
+  <div id="eagle-warning" class="hidden">🦅 AQUILA IN ARRIVO — MUOVITI!</div>
+
+  <div id="gameover-screen" class="overlay hidden">
+    <h2 id="go-reason">SPIACCICATA!</h2>
+    <div id="go-score">0</div>
+    <div id="go-best">RECORD 0</div>
+    <button id="restart-btn">RIPROVA</button>
+    <p class="hint-small">o premi INVIO</p>
+  </div>
+</div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
