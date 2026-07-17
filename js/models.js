@@ -7,6 +7,12 @@ const LIB = {};
 const CAR_MODELS = ['sedan', 'sedan-sports', 'suv', 'taxi', 'police', 'hatchback-sports'];
 const TRUCK_MODELS = ['truck', 'delivery', 'van', 'ambulance'];
 const TREE_MODELS = ['tree_default', 'tree_oak', 'tree_fat', 'tree_pineDefaultA', 'tree_pineDefaultB', 'tree_cone', 'tree_detailed'];
+const BIOME_TREES = [
+  'tree_default_fall', 'tree_oak_fall', 'tree_detailed_fall', 'tree_fat_fall',
+  'tree_palm', 'tree_palmShort', 'tree_palmTall', 'tree_palmBend', 'cactus_short', 'cactus_tall',
+  'tree_pineRoundA', 'tree_pineRoundB',
+  'tree_default_dark', 'tree_oak_dark', 'tree_detailed_dark', 'tree_blocks_dark',
+];
 const ROCK_MODELS = ['rock_largeA', 'rock_largeB', 'rock_tallA'];
 
 function prepModel(scene, targetLen, axis = 'x') {
@@ -16,6 +22,9 @@ function prepModel(scene, targetLen, axis = 'x') {
   if (axis === 'x') {
     const depth = size.z * s;                 // vehicles must fit inside 1-tile lane depth
     if (depth > 0.92) s *= 0.92 / depth;
+  } else {
+    const h = size.y * s;                     // props: cap height (thin models like cacti blow up otherwise)
+    if (h > 1.7) s *= 1.7 / h;
   }
   scene.scale.setScalar(s);
   bbox.setFromObject(scene);
@@ -40,6 +49,7 @@ export function loadLibrary() {
   for (const m of CAR_MODELS) jobs.push(load(m, 1.7, 'x'));
   for (const m of TRUCK_MODELS) jobs.push(load(m, 2.0, 'x'));
   for (const m of TREE_MODELS) jobs.push(load(m, 0.9, 'xz'));
+  for (const m of BIOME_TREES) jobs.push(load(m, 0.9, 'xz'));
   for (const m of ROCK_MODELS) jobs.push(load(m, 0.75, 'xz'));
   return Promise.all(jobs);
 }
@@ -126,8 +136,9 @@ export function makeGoat(skinId = 'bianca') {
 }
 
 // ---------- TREE ----------
-export function makeTree(size = 1) {
-  const name = TREE_MODELS[Math.floor(Math.random() * TREE_MODELS.length)];
+export function makeTree(size = 1, pool = null) {
+  const names = pool && pool.length ? pool : TREE_MODELS;
+  const name = names[Math.floor(Math.random() * names.length)];
   const glb = cloneLib(name);
   if (glb) {
     const s = 0.85 + size * 0.25 + Math.random() * 0.15;

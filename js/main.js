@@ -100,6 +100,8 @@ sun.shadow.mapSize.set(2048, 2048);
 sun.shadow.camera.left = -14; sun.shadow.camera.right = 14;
 sun.shadow.camera.top = 14; sun.shadow.camera.bottom = -14;
 sun.shadow.camera.far = 60;
+sun.shadow.bias = -0.0004;        // no shadow-acne flicker
+sun.shadow.normalBias = 0.02;
 scene.add(sun, sun.target);
 
 window.addEventListener('resize', () => {
@@ -235,6 +237,30 @@ const rand = (a, b) => a + Math.random() * (b - a);
 const randi = (a, b) => Math.floor(rand(a, b + 1));
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
+// ---------------- Biomes (bands of 100 rows, linear 20-row blend) ----------------
+const BIOMES = [
+  { name: 'campagna', grassA: 0xa8d878, grassB: 0x9ccc68, trees: ['tree_default', 'tree_oak', 'tree_fat', 'tree_detailed'] },
+  { name: 'autunno', grassA: 0xcdb45e, grassB: 0xc1a852, trees: ['tree_default_fall', 'tree_oak_fall', 'tree_detailed_fall', 'tree_fat_fall'] },
+  { name: 'costa', grassA: 0xe6d8a2, grassB: 0xdccd94, trees: ['tree_palm', 'tree_palmShort', 'tree_palmTall', 'tree_palmBend', 'cactus_short', 'cactus_tall'] },
+  { name: 'inverno', grassA: 0xdde8ea, grassB: 0xd0dde0, trees: ['tree_pineDefaultA', 'tree_pineDefaultB', 'tree_pineRoundA', 'tree_pineRoundB'] },
+  { name: 'bosco scuro', grassA: 0x87996a, grassB: 0x7b8d5f, trees: ['tree_default_dark', 'tree_oak_dark', 'tree_detailed_dark', 'tree_blocks_dark'] },
+];
+const _gA = new THREE.Color(), _gB = new THREE.Color();
+
+function biomeAt(r) {
+  const BAND = 100, FADE = 20;
+  const i = Math.floor(r / BAND) % BIOMES.length;
+  const j = (i + 1) % BIOMES.length;
+  const local = r % BAND;
+  const t = local < BAND - FADE ? 0 : (local - (BAND - FADE)) / FADE;
+  const A = BIOMES[i], B = BIOMES[j];
+  return {
+    grassA: _gA.setHex(A.grassA).lerp(_gB.setHex(B.grassA), t).getHex(),
+    grassB: _gA.setHex(A.grassB).lerp(_gB.setHex(B.grassB), t).getHex(),
+    trees: Math.random() < t ? B.trees : A.trees,   // gradual model mix inside the fade
+  };
+}
+
 let genState = { lastTypes: [] };
 
 function laneTypeFor(r) {
@@ -275,13 +301,15 @@ function buildRow(r) {
   scene.add(group);
   const row = { type, group, r, trees: new Set(), vehicles: [], logs: [], coin: null };
   const diff = Math.min(r / 100, 1);
+  const late = Math.min(Math.max(r - 100, 0) / 400, 0.5);   // slow secondary ramp after row 100
 
   if (type === 'grass') {
-    group.add(lanePlane(r % 2 ? PALETTE.grassA : PALETTE.grassB));
+    const biome = biomeAt(r);
+    group.add(lanePlane(r % 2 ? biome.grassA : biome.grassB));
     // frame trees outside playfield
     for (let c = -14; c <= 14; c++) {
       if (Math.abs(c) <= COLS) continue;
-      if (Math.random() < 0.45) { const t = makeTree(randi(1, 2)); t.position.x = c; group.add(t); }
+      if (Math.random() < 0.45) { const t = makeTree(randi(1, 2), biome.trees); t.position.x = c; group.add(t); }
     }
     // playable obstacles (guarantee >= 4 free cells; none on spawn rows)
     if (r >= 3) {
@@ -289,7 +317,7 @@ function buildRow(r) {
       const nObs = randi(0, 3);
       for (let i = 0; i < nObs && cells.length > 4; i++) {
         const c = pick(cells); cells.splice(cells.indexOf(c), 1);
-        const o = Math.random() < 0.8 ? makeTree(randi(1, 2)) : makeRock();
+        const o = Math.random() < 0.8 ? makeTree(randi(1, 2), biome.trees) : makeRock();
         o.position.x = c; group.add(o);
         row.trees.add(c);
       }
@@ -309,7 +337,7 @@ function buildRow(r) {
       group.add(dash);
     }
     const dir = Math.random() < 0.5 ? 1 : -1;
-    const speed = rand(1.7, 2.6) + diff * 2.4;
+    const speed = rand(1.7, 2.6) + diff * 2.4 + late;
     const n = randi(2, 3);
     const span = LANE_W;
     for (let i = 0; i < n; i++) {
@@ -324,7 +352,7 @@ function buildRow(r) {
   } else if (type === 'river') {
     group.add(lanePlane(PALETTE.water, -0.08));
     const dir = Math.random() < 0.5 ? 1 : -1;
-    const speed = rand(1.0, 1.7) + diff * 1.3;
+    const speed = rand(1.0, 1.7) + diff * 1.3 + late * 0.6;
     const n = speed > 1.6 ? 3 : randi(2, 3);
     const span = LANE_W;
     for (let i = 0; i < n; i++) {
@@ -402,7 +430,10 @@ function ensureRows() {
 
 // ---------------- Player ----------------
 function makePlayer() {
-  const g = makeGoat(currentSkin);
+  const goat = makeGoat(currentSkin);
+  goat.scale.setScalar(0.78);              // goat smaller than cars, real-world proportions
+  const g = new THREE.Group();             // wrapper: squash anim scales this, not the base
+  g.add(goat);
   g.position.set(0, 0, 0);
   scene.add(g);
   return {
