@@ -1,6 +1,6 @@
 # Capra Crossing 🐐
 
-Endless hopper 3D in stile Crossy Road: porta Nonna Rosetta (la capra) più lontano possibile tra strade, fiumi e binari. HTML5 + Three.js, pensato per CrazyGames.
+Endless hopper 3D in stile Crossy Road più lontano possibile tra strade, fiumi e binari. HTML5 + Three.js, pensato per CrazyGames.
 
 ## Gioca
 
@@ -11,11 +11,11 @@ python3 -m http.server 8643
 
 ## Controlli
 
-| Input | Azione |
-|---|---|
+| Input                            | Azione                |
+| -------------------------------- | --------------------- |
 | ⬆️⬇️⬅️➡️ / WASD / Spazio | salta nella direzione |
-| Tap (mobile) | avanti |
-| Swipe (mobile) | salta nella direzione |
+| Tap (mobile)                     | avanti                |
+| Swipe (mobile)                   | salta nella direzione |
 
 ## Meccaniche
 

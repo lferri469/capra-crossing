@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="it">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Capra Crossing 🐐</title>
+<title>Goat Crosser 🐐</title>
 <link rel="stylesheet" href="css/style.css">
 <script>
 window.addEventListener('error', (e) => {
@@ -15,6 +15,7 @@ window.addEventListener('unhandledrejection', (e) => {
   fetch(`/__rej?m=${m}`).catch(() => {});
 });
 </script>
+<script src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.min.js" } }
 </script>
@@ -22,37 +23,60 @@ window.addEventListener('unhandledrejection', (e) => {
 <body>
 <div id="game-container">
   <canvas id="game-canvas"></canvas>
+  <div id="float-layer"></div>
 
-  <div id="hud">
-    <div id="score">0</div>
-    <div id="best">RECORD 0</div>
-    <div id="coins-hud">🪙 0</div>
+  <div id="splash-screen">
+    <div class="splash-inner">
+      <div class="splash-logo">▶</div>
+      <div class="splash-text">Presented by <strong>CrazyGames</strong></div>
+    </div>
   </div>
 
-  <div id="title-screen" class="overlay">
-    <h1>CAPRA<br>CROSSING</h1>
-    <p class="subtitle">Porta la capra piu' lontano che puoi!</p>
-    <p id="loading-text">Caricamento asset...</p>
+  <div id="hud">
+    <div>
+      <div id="score">0</div>
+      <div id="best">BEST 0</div>
+    </div>
+    <div id="power-hud"></div>
+    <div id="coins-hud">🪙 0</div>
+    <button id="mute-btn">🔊</button>
+  </div>
+
+  <div id="title-screen" class="overlay hidden">
+    <h1>GOAT<br>CROSSER</h1>
+    <p class="subtitle">Take the goat as far as you can!</p>
+    <div id="mode-row">
+      <button id="mode-endless" class="mode-btn selected">🐐 ENDLESS RUN</button>
+      <button id="mode-daily" class="mode-btn">🗓️ DAILY CHALLENGE</button>
+    </div>
+    <p id="loading-text">Loading assets...</p>
     <div class="controls-hint">
-      <span>⬆️⬇️⬅️➡️ / WASD &nbsp;–&nbsp; salta</span>
-      <span>📱 swipe per muoverti — 🦅 se ti fermi troppo, l'aquila ti prende!</span>
+      <span>⬆️⬇️⬅️➡️ / WASD – hop &nbsp;·&nbsp; SPACE – panic bleat</span>
+      <span>📱 swipe to move — 🦅 stall too long and the eagle gets you!</span>
     </div>
     <div id="skin-shop">
       <div id="title-coins">🪙 0</div>
       <div id="skin-row"></div>
     </div>
-    <p class="blink">PREMI UN TASTO O TOCCA PER INIZIARE</p>
+    <p class="blink">PRESS ANY KEY OR TAP TO START</p>
   </div>
 
-  <div id="eagle-warning" class="hidden">🦅 AQUILA IN ARRIVO — MUOVITI!</div>
+  <div id="eagle-warning" class="hidden">🦅 EAGLE INCOMING — MOVE!</div>
 
   <div id="gameover-screen" class="overlay hidden">
-    <h2 id="go-reason">SPIACCICATA!</h2>
+    <h2 id="go-reason">SQUASHED!</h2>
     <div id="go-score">0</div>
-    <div id="go-best">RECORD 0</div>
-    <button id="restart-btn">RIPROVA</button>
-    <p class="hint-small">o premi INVIO</p>
+    <div id="go-best">BEST 0</div>
+    <div id="go-stats"></div>
+    <div class="go-buttons">
+      <button id="revive-btn" class="hidden">📺 WATCH AD · REVIVE</button>
+      <button id="restart-btn">TRY AGAIN</button>
+      <button id="share-btn">📣 CHALLENGE FRIENDS</button>
+    </div>
+    <p class="hint-small">or press ENTER</p>
   </div>
+
+  <div id="toast" class="hidden"></div>
 </div>
 
 <script type="module" src="js/main.js"></script>
