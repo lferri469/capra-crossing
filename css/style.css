@@ -224,13 +224,26 @@ html, body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 18px;
   background: rgba(20, 24, 46, 0.55);
   backdrop-filter: blur(3px);
   z-index: 10;
   text-align: center;
   padding: 20px;
+  /* short screens: the whole overlay scrolls instead of clipping the shop */
+  overflow-y: auto;
+}
+
+/* auto margins center the content when it fits, allow scrolling when it doesn't */
+.overlay > :first-child { margin-top: auto; }
+.overlay > :last-child { margin-bottom: auto; }
+
+@media (max-height: 820px) {
+  .overlay { gap: 10px; }
+  .overlay h1 { font-size: clamp(34px, 7vh, 64px); }
+  .subtitle { font-size: 15px; }
+  .controls-hint { font-size: 13px; }
 }
 
 .overlay.hidden { display: none; }
@@ -461,9 +474,15 @@ html, body {
   flex-wrap: wrap;
   justify-content: center;
   max-width: 740px;
-  max-height: 40vh;
-  overflow-y: auto;
 }
+
+#cg-badge {
+  height: 30px;
+  opacity: .85;
+  object-fit: contain;
+}
+
+#cg-badge.hidden { display: none; }
 
 .gear-emoji {
   font-size: 40px;

@@ -396,6 +396,8 @@ function applyStaticI18n() {
   set('#tab-worlds', `🌍 ${t('tab_worlds')}`);
 }
 applyStaticI18n();
+// CrazyGames badge on the title screen, only when actually hosted there
+if (onCrazyGames) document.getElementById('cg-badge')?.classList.remove('hidden');
 ui.best.textContent = `${t('best')} ${best}`;
 ui.coins.textContent = `🪙 ${totalCoins}`;
 if (onCrazyGames && !ownedSkins.includes('crazy')) { ownedSkins.push('crazy'); saveCoins(); }
