@@ -102,32 +102,46 @@ export const PALETTE = {
 // ---------- GOAT SKINS ----------
 export const SKINS = [
   { id: 'bianca', name: 'Rosetta', cost: 0, body: 0xf5f0e8, snout: 0xe8ded0, horn: 0xd9a066 },
-  { id: 'nera', name: 'Nerina', cost: 20, body: 0x3a3a42, snout: 0x55555f, horn: 0xcccccc },
-  { id: 'marrone', name: 'Ciocco', cost: 40, body: 0x8a5f3b, snout: 0xa87f57, horn: 0xf0e6d8 },
-  { id: 'dorata', name: 'Aurelia', cost: 80, body: 0xe8c84a, snout: 0xf5e04b, horn: 0xffffff },
-  { id: 'zombie', name: 'Zombina', cost: 150, body: 0x8aa86a, snout: 0xa8c88a, horn: 0x666655 },
+  { id: 'nera', name: 'Nerina', cost: 20, body: 0x3a3a42, snout: 0x55555f, horn: 0xcccccc, shape: { earLen: 1.35, earDroop: 0.3 } },
+  { id: 'marrone', name: 'Ciocco', cost: 40, body: 0x8a5f3b, snout: 0xa87f57, horn: 0xf0e6d8, shape: { bodyScale: 1.14, hornScale: 0.75 } },
+  { id: 'dorata', name: 'Aurelia', cost: 80, body: 0xe8c84a, snout: 0xf5e04b, horn: 0xffffff, shape: { hornScale: 1.4, tailFluff: 1.5 } },
+  { id: 'zombie', name: 'Zombina', cost: 150, body: 0x8aa86a, snout: 0xa8c88a, horn: 0x666655, shape: { spotted: 0x4a5a3f, earDroop: 0.6, hornScale: 0.6 } },
   // ability skins: perk text shown in the shop, logic lives in main.js
-  { id: 'montone', name: 'Montone', cost: 5000, body: 0xb8ada0, snout: 0x8f8478, horn: 0x6b5a48, perk: '🛡️ auto-shield every 45s' },
-  { id: 'alpaca', name: 'Alpaca', cost: 10000, body: 0xe8d8c2, snout: 0xcbb49b, horn: 0xd9cfc0, perk: '🪙 1.2× coins' },
+  { id: 'montone', name: 'Montone', cost: 5000, body: 0xb8ada0, snout: 0x8f8478, horn: 0x6b5a48, perk: '🛡️ auto-shield every 45s', shape: { hornScale: 1.9, hornCurl: 1, bodyScale: 1.1 } },
+  { id: 'alpaca', name: 'Alpaca', cost: 10000, body: 0xe8d8c2, snout: 0xcbb49b, horn: 0xd9cfc0, perk: '🪙 1.2× coins', shape: { neck: 0.16, earLen: 1.6, hornScale: 0.4 } },
   // site-exclusive: auto-unlocks only on crazygames.com domains
-  { id: 'crazy', name: 'Crazy Goat', cost: 0, body: 0xff6b00, snout: 0x1a1a1a, horn: 0x1a1a1a, cgOnly: true },
+  { id: 'crazy', name: 'Crazy Goat', cost: 0, body: 0xff6b00, snout: 0x1a1a1a, horn: 0x1a1a1a, cgOnly: true, shape: { hornScale: 1.6, hornCurl: -0.6, spotted: 0x1a1a1a } },
 ];
 
 // ---------- GOAT (player) — rounded, furry, fully riggable ----------
 export function makeGoat(skinId = 'bianca') {
   const skin = SKINS.find((s) => s.id === skinId) || SKINS[0];
+  const shp = skin.shape || {};
+  const bodyScale = shp.bodyScale || 1;
+  const hornScale = shp.hornScale || 1;
+  const hornCurl = shp.hornCurl || 0;
+  const earLen = shp.earLen || 1;
+  const earDroop = shp.earDroop || 0;
+  const tailFluff = shp.tailFluff || 1;
+  const neck = shp.neck || 0;
   const g = new THREE.Group();
   const furMat = new THREE.MeshLambertMaterial({ color: 0xffffff, map: furTexture(skin.body) });
   const snoutMat = new THREE.MeshLambertMaterial({ color: skin.snout });
   const hornMat = new THREE.MeshLambertMaterial({ color: skin.horn });
 
   // body: plump ellipsoid + chest tuft
-  const body = ball(0.34, 0, 0, 0.46, -0.02, 1.0, 0.82, 1.24, furMat);
-  const rump = ball(0.26, 0, 0, 0.48, -0.3, 1.05, 0.9, 1.0, furMat);
+  const body = ball(0.34 * bodyScale, 0, 0, 0.46, -0.02, 1.0, 0.82, 1.24, furMat);
+  const rump = ball(0.26 * bodyScale, 0, 0, 0.48, -0.3, 1.05, 0.9, 1.0, furMat);
+  // breed markings: a couple of darker patches over the coat
+  if (shp.spotted) {
+    const spotMat = new THREE.MeshLambertMaterial({ color: shp.spotted });
+    g.add(ball(0.1, 0, -0.14, 0.5, -0.12, 1, 0.7, 1, spotMat));
+    g.add(ball(0.08, 0, 0.15, 0.42, -0.34, 1, 0.7, 1, spotMat));
+  }
 
   // head group (bobs / looks around)
   const headG = new THREE.Group();
-  headG.position.set(0, 0.72, 0.34);
+  headG.position.set(0, 0.72 + neck, 0.34 + neck * 0.4);
   const head = ball(0.21, 0, 0, 0, 0, 0.95, 0.95, 1.0, furMat);
   const snout = ball(0.115, 0, 0, -0.055, 0.175, 1.0, 0.8, 1.05, snoutMat);
   const nose = ball(0.035, 0x554444, 0, -0.03, 0.28);
@@ -142,26 +156,26 @@ export function makeGoat(skinId = 'bianca') {
     eyes.push(eye);
     headG.add(eye, pupil);
   }
-  // horns: two-segment curved cones
+  // horns: two-segment curved cones (scale/curl vary per breed — ram = big+curled, alpaca = stubby)
   for (const sx of [-1, 1]) {
-    const h1 = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.2, 8), hornMat);
+    const h1 = new THREE.Mesh(new THREE.ConeGeometry(0.05 * hornScale, 0.2 * hornScale, 8), hornMat);
     h1.position.set(sx * 0.1, 0.2, -0.04);
-    h1.rotation.x = -0.55; h1.rotation.z = sx * -0.18;
+    h1.rotation.x = -0.55 - hornCurl * 0.3; h1.rotation.z = sx * (-0.18 - hornCurl * 0.35);
     h1.castShadow = true;
-    const h2 = new THREE.Mesh(new THREE.ConeGeometry(0.033, 0.14, 8), hornMat);
-    h2.position.set(sx * 0.13, 0.3, -0.11);
-    h2.rotation.x = -1.0; h2.rotation.z = sx * -0.25;
+    const h2 = new THREE.Mesh(new THREE.ConeGeometry(0.033 * hornScale, 0.14 * hornScale, 8), hornMat);
+    h2.position.set(sx * (0.13 + hornCurl * 0.05), 0.3, -0.11);
+    h2.rotation.x = -1.0 - hornCurl * 0.4; h2.rotation.z = sx * (-0.25 - hornCurl * 0.45);
     h2.castShadow = true;
     headG.add(h1, h2);
   }
-  // floppy ears (animatable)
+  // floppy ears (animatable) — length/droop vary per breed
   const ears = [];
   for (const sx of [-1, 1]) {
     const pivot = new THREE.Group();
     pivot.position.set(sx * 0.17, 0.1, -0.02);
-    const ear = ball(0.09, 0, sx * 0.07, -0.03, 0, 1.45, 0.55, 0.8, snoutMat);
+    const ear = ball(0.09, 0, sx * 0.07, -0.03, 0, 1.45 * earLen, 0.55, 0.8, snoutMat);
     pivot.add(ear);
-    pivot.rotation.z = sx * 0.5;
+    pivot.rotation.z = sx * (0.5 + earDroop);
     ears.push(pivot);
     headG.add(pivot);
   }
@@ -187,7 +201,7 @@ export function makeGoat(skinId = 'bianca') {
   // tail: perky pivot
   const tailG = new THREE.Group();
   tailG.position.set(0, 0.62, -0.42);
-  const tail = ball(0.085, 0, 0, 0.04, -0.02, 0.8, 1.1, 0.8, furMat);
+  const tail = ball(0.085 * tailFluff, 0, 0, 0.04, -0.02, 0.8, 1.1, 0.8, furMat);
   tailG.add(tail);
   tailG.rotation.x = 0.6;
 
@@ -438,9 +452,9 @@ export function makePowerup(kind) {
     t1.position.set(-0.16, -0.16, 0);
     const t2 = t1.clone(); t2.position.x = 0.16;
     g.add(m1, m2, arc, t1, t2);
-  } else {  // superjump
-    base.material.emissive.setHex(0x225511);
-    const cone = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.36, 10), mat(0x8fce5a));
+  } else {  // speed
+    base.material.emissive.setHex(0x665500);
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.36, 10), mat(0xffd23f));
     cone.position.y = 0.1;
     const fl = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.16, 8), new THREE.MeshLambertMaterial({ color: 0xffe066, emissive: 0x886600 }));
     fl.position.y = -0.12; fl.rotation.x = Math.PI;

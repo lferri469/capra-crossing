@@ -9,7 +9,7 @@ import { Particles, FloatingText, PostFX, Shake } from './fx.js';
 
 // ---------------- Constants ----------------
 const TILE = 1;
-const COLS = 8;               // playable columns: -COLS..COLS (near-full screen width)
+const COLS = 9;               // playable columns: -COLS..COLS (near-full screen width)
 const LANE_W = 42;            // visual lane width
 const AHEAD = 24;             // rows generated ahead of player
 const BEHIND = 7;             // rows kept behind camera
@@ -68,38 +68,65 @@ function noise(dur, vol = 0.2, freq = 800, type = 'lowpass') {
   src.connect(f).connect(g).connect(ctx.destination);
   src.start();
 }
+// ---------------- Audio (ElevenLabs-generated clips, balanced mix) ----------------
+const SFX_MASTER = 0.8;
+const SFX_FILES = {
+  hop: ['assets/audio/sfx/goat_hop.mp3', 0.35],
+  coin: ['assets/audio/sfx/coin.mp3', 0.5],
+  crash: ['assets/audio/sfx/crash.mp3', 0.7],
+  splash: ['assets/audio/sfx/splash.mp3', 0.55],
+  eagle: ['assets/audio/sfx/eagle_screech.mp3', 0.6],
+  deny: ['assets/audio/sfx/deny.mp3', 0.35],
+  record: ['assets/audio/sfx/record_fanfare.mp3', 0.6],
+  milestone: ['assets/audio/sfx/milestone.mp3', 0.45],
+  shield: ['assets/audio/sfx/shield_pickup.mp3', 0.5],
+  magnet: ['assets/audio/sfx/magnet_pickup.mp3', 0.5],
+  speed: ['assets/audio/sfx/speed_pickup.mp3', 0.5],
+  train_horn: ['assets/audio/sfx/train_horn.mp3', 0.55],
+  train_rumble: ['assets/audio/sfx/train_rumble.mp3', 0.3],
+  car_pass: ['assets/audio/sfx/car_pass.mp3', 0.25],
+  car_horn: ['assets/audio/sfx/car_horn.mp3', 0.3],
+  gameover: ['assets/audio/sfx/gameover.mp3', 0.5],
+  bleat: ['assets/audio/sfx/goat_bleat_happy.mp3', 0.55],
+};
+const sfxCache = new Map();
+function playSfx(name) {
+  const def = SFX_FILES[name];
+  if (!def) return;
+  const [src, relVol] = def;
+  let base = sfxCache.get(name);
+  if (!base) { base = new Audio(src); base.preload = 'auto'; sfxCache.set(name, base); }
+  const el = base.cloneNode();
+  el.volume = Math.min(1, SFX_MASTER * relVol);
+  el.play().catch(() => {});
+}
 const snd = {
-  hop: () => tone(420, 0.08, 'square', 0.08, 180),
-  coin: () => { tone(880, 0.07, 'sine', 0.12); setTimeout(() => tone(1320, 0.09, 'sine', 0.12), 60); },
-  crash: () => { noise(0.25, 0.3, 600); tone(120, 0.25, 'sawtooth', 0.15, -60); },
-  splash: () => noise(0.35, 0.25, 400),
+  hop: () => playSfx('hop'),
+  coin: () => playSfx('coin'),
+  crash: () => playSfx('crash'),
+  splash: () => playSfx('splash'),
   warn: () => tone(660, 0.12, 'square', 0.1),
-  eagle: () => tone(900, 0.4, 'sawtooth', 0.12, -500),
-  deny: () => tone(180, 0.06, 'square', 0.06),
-  record: () => { [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => tone(f, 0.12, 'square', 0.1), i * 90)); },
+  eagle: () => playSfx('eagle'),
+  deny: () => playSfx('deny'),
+  record: () => playSfx('record'),
   whoosh: () => noise(0.18, 0.22, 1600, 'bandpass'),
-  milestone: () => { [659, 880].forEach((f, i) => setTimeout(() => tone(f, 0.1, 'triangle', 0.12), i * 70)); },
-  power: () => { [440, 660, 880].forEach((f, i) => setTimeout(() => tone(f, 0.09, 'triangle', 0.12), i * 60)); },
+  milestone: () => playSfx('milestone'),
+  power: (kind) => playSfx(kind === 'magnet' ? 'magnet' : kind === 'speed' ? 'speed' : 'shield'),
 };
 
-// ---------------- Procedural background music (no files) ----------------
+// ---------------- Background music (ElevenLabs-generated loop) ----------------
+const MUSIC_VOL = 0.22;   // sits well under SFX so pickups/impacts stay readable
 let musicOn = localStorage.getItem('capra_music') !== '0';
-let musicTimer = null, musicStep = 0;
-const MUSIC_SCALE = [0, 3, 5, 7, 10, 12, 15];       // minor pentatonic
-function musicTick() {
-  if (!musicOn || !actx || state === 'title') return;
-  const s = musicStep++;
-  // soft bass every 4 steps
-  if (s % 4 === 0) tone(110 * Math.pow(2, MUSIC_SCALE[(s / 4) % 4 === 0 ? 0 : 2] / 12), 0.5, 'sine', 0.045);
-  // sparse melody
-  if (Math.random() < 0.55) {
-    const n = MUSIC_SCALE[Math.floor(Math.random() * MUSIC_SCALE.length)];
-    tone(330 * Math.pow(2, n / 12), 0.22, 'triangle', 0.028);
-  }
-}
+const bgMusic = new Audio('assets/audio/music/bg.mp3');
+bgMusic.loop = true;
+bgMusic.volume = MUSIC_VOL;
 function startMusic() {
-  if (musicTimer || !audio()) return;
-  musicTimer = setInterval(musicTick, 300);
+  if (!musicOn || !audio()) return;
+  bgMusic.play().catch(() => {});
+}
+function setMusicOn(on) {
+  musicOn = on;
+  if (on) bgMusic.play().catch(() => {}); else bgMusic.pause();
 }
 
 // ---------------- Renderer / Scene ----------------
@@ -187,16 +214,46 @@ function dayTarget(row) {
   };
 }
 
+// pure, no genRand: safe to call every frame without perturbing the daily-mode world seed
+function biomeAtmoTarget(row) {
+  const BAND = 100, FADE = 20;
+  const i = Math.floor(row / BAND) % BIOMES.length;
+  const j = (i + 1) % BIOMES.length;
+  const local = row % BAND;
+  const t = local < BAND - FADE ? 0 : (local - (BAND - FADE)) / FADE;
+  const A = BIOMES[i].sky, B = BIOMES[j].sky;
+  return {
+    r: A.r + (B.r - A.r) * t, g: A.g + (B.g - A.g) * t, b: A.b + (B.b - A.b) * t,
+    fogNear: BIOMES[i].fogNear + (BIOMES[j].fogNear - BIOMES[i].fogNear) * t,
+    fogFar: BIOMES[i].fogFar + (BIOMES[j].fogFar - BIOMES[i].fogFar) * t,
+  };
+}
+const bioCur = { r: 1, g: 1, b: 1, fogNear: 18, fogFar: 34 };
+const _skyMul = new THREE.Color();
+
 function updateDayCycle(dt) {
-  const tgt = dayTarget(Math.max(score, 0));
+  const row = Math.max(score, 0);
+  const tgt = dayTarget(row);
+  const bTgt = biomeAtmoTarget(row);
   const k = Math.min(1, dt * 1.2);
   dayCur.sky.lerp(tgt.sky, k);
   dayCur.sun.lerp(tgt.sun, k);
   dayCur.sunI += (tgt.sunI - dayCur.sunI) * k;
   dayCur.amb += (tgt.amb - dayCur.amb) * k;
   dayCur.hemiI += (tgt.hemiI - dayCur.hemiI) * k;
-  scene.background.copy(dayCur.sky);
-  scene.fog.color.copy(dayCur.sky);
+  bioCur.r += (bTgt.r - bioCur.r) * k;
+  bioCur.g += (bTgt.g - bioCur.g) * k;
+  bioCur.b += (bTgt.b - bioCur.b) * k;
+  bioCur.fogNear += (bTgt.fogNear - bioCur.fogNear) * k;
+  bioCur.fogFar += (bTgt.fogFar - bioCur.fogFar) * k;
+  _skyMul.copy(dayCur.sky);
+  _skyMul.r = Math.min(1, _skyMul.r * bioCur.r);
+  _skyMul.g = Math.min(1, _skyMul.g * bioCur.g);
+  _skyMul.b = Math.min(1, _skyMul.b * bioCur.b);
+  scene.background.copy(_skyMul);
+  scene.fog.color.copy(_skyMul);
+  scene.fog.near = bioCur.fogNear;
+  scene.fog.far = bioCur.fogFar;
   sun.color.copy(dayCur.sun);
   sun.intensity = dayCur.sunI;
   ambient.intensity = dayCur.amb;
@@ -339,11 +396,13 @@ const dailyLabel = () => {
 
 // ---------------- Biomes (bands of 100 rows, linear 20-row blend) ----------------
 const BIOMES = [
-  { name: 'campagna', grassA: 0xa8d878, grassB: 0x9ccc68, trees: ['tree_default', 'tree_oak', 'tree_fat', 'tree_detailed'] },
-  { name: 'autunno', grassA: 0xcdb45e, grassB: 0xc1a852, trees: ['tree_default_fall', 'tree_oak_fall', 'tree_detailed_fall', 'tree_fat_fall'] },
-  { name: 'costa', grassA: 0xe6d8a2, grassB: 0xdccd94, trees: ['tree_palm', 'tree_palmShort', 'tree_palmTall', 'tree_palmBend', 'cactus_short', 'cactus_tall'] },
-  { name: 'inverno', grassA: 0xdde8ea, grassB: 0xd0dde0, trees: ['tree_pineDefaultA', 'tree_pineDefaultB', 'tree_pineRoundA', 'tree_pineRoundB'] },
-  { name: 'bosco scuro', grassA: 0x87996a, grassB: 0x7b8d5f, trees: ['tree_default_dark', 'tree_oak_dark', 'tree_detailed_dark', 'tree_blocks_dark'] },
+  { name: 'campagna', grassA: 0xa8d878, grassB: 0x9ccc68, trees: ['tree_default', 'tree_oak', 'tree_fat', 'tree_detailed'], sky: { r: 1, g: 1, b: 1 }, fogNear: 18, fogFar: 34 },
+  { name: 'autunno', grassA: 0xcdb45e, grassB: 0xc1a852, trees: ['tree_default_fall', 'tree_oak_fall', 'tree_detailed_fall', 'tree_fat_fall'], sky: { r: 1.08, g: 0.96, b: 0.8 }, fogNear: 16, fogFar: 30 },
+  { name: 'costa', grassA: 0xe6d8a2, grassB: 0xdccd94, trees: ['tree_palm', 'tree_palmShort', 'tree_palmTall', 'tree_palmBend', 'cactus_short', 'cactus_tall'], sky: { r: 0.92, g: 1.04, b: 1.1 }, fogNear: 21, fogFar: 39 },
+  { name: 'deserto', grassA: 0xe8c27a, grassB: 0xdbb066, trees: ['cactus_short', 'cactus_tall'], sky: { r: 1.16, g: 0.97, b: 0.76 }, fogNear: 13, fogFar: 26 },
+  { name: 'montagna', grassA: 0x9fae9a, grassB: 0x93a38d, trees: ['tree_pineDefaultA', 'tree_pineDefaultB', 'tree_pineRoundA', 'tree_pineRoundB', 'tree_cone'], sky: { r: 0.94, g: 1.0, b: 1.1 }, fogNear: 22, fogFar: 40 },
+  { name: 'inverno', grassA: 0xdde8ea, grassB: 0xd0dde0, trees: ['tree_pineDefaultA', 'tree_pineDefaultB', 'tree_pineRoundA', 'tree_pineRoundB'], sky: { r: 1.0, g: 1.03, b: 1.14 }, fogNear: 15, fogFar: 28 },
+  { name: 'bosco scuro', grassA: 0x87996a, grassB: 0x7b8d5f, trees: ['tree_default_dark', 'tree_oak_dark', 'tree_detailed_dark', 'tree_blocks_dark'], sky: { r: 0.74, g: 0.82, b: 0.72 }, fogNear: 11, fogFar: 22 },
 ];
 const _gA = new THREE.Color(), _gB = new THREE.Color();
 
@@ -553,7 +612,7 @@ function buildRow(r) {
       const sinceP = r - genState.lastPowerRow;
       if (r > 6 && cells.length > 4 && (sinceP >= 46 || (sinceP >= 34 && genRand() < 0.25))) {
         const c = gpick(cells); cells.splice(cells.indexOf(c), 1);
-        const kind = gpick(['shield', 'magnet', 'superjump']);
+        const kind = gpick(['shield', 'magnet', 'speed']);
         const pu = poolGet('pu_' + kind) || makePowerup(kind);
         pu.userData._pk = 'pu_' + kind;
         pu.position.set(c, 0.45, 0); group.add(pu);
@@ -747,7 +806,7 @@ function makePlayer() {
     onLog: null, logOffset: 0,
     buffer: [], facing: 0, squash: 0, alive: true,
     animT: 0, blinkT: rand(1, 4),
-    shield: currentSkin === 'montone', magnetT: 0, superjump: false, invulnT: 0, ramT: 0,
+    shield: currentSkin === 'montone', magnetT: 0, speedT: 0, invulnT: 0, ramT: 0,
   };
 }
 
@@ -757,29 +816,6 @@ const backWallRow = () => Math.floor(camRow) - (BEHIND - 2);
 function tryHop(dx, dz) {
   if (!player.alive || state !== 'playing') return;
   if (player.hopping) {
-    // amphibious jump: one mid-air retarget, ignores the ground-contact rule
-    if (player.superjump && (dx || dz)) {
-      const t = player.hopT;
-      const fx = player.hopFrom.x + (player.hopTo.x - player.hopFrom.x) * t;
-      const fz = player.hopFrom.z + (player.hopTo.z - player.hopFrom.z) * t;
-      const nCol = Math.max(-COLS, Math.min(COLS, player.hopTo.col + dx));
-      const nRow = Math.max(0, player.hopTo.row + (dz > 0 ? 1 : dz < 0 ? -1 : 0));
-      if (dz < 0 && nRow < backWallRow()) { snd.deny(); return; }
-      if (rows.get(nRow)?.trees.has(nCol)) { snd.deny(); return; }
-      player.superjump = false;
-      player.hopBig = true;
-      player.hopT = 0;
-      player.hopFrom = { x: fx, z: fz, y: player.mesh.position.y };
-      player.hopTo = { x: nCol, z: -nRow, col: nCol, row: nRow };
-      player.facing = Math.atan2(dx, dz > 0 ? -1 : dz < 0 ? 1 : 0);
-      if (dx === 0 && dz === 0) player.facing = 0;
-      player.mesh.rotation.y = player.facing;
-      snd.power();
-      updatePowerHud();
-      celebrate('DOUBLE JUMP!', 'thrill');
-      if (dz > 0) idleTimer = 0;
-      return;
-    }
     if (player.buffer.length < 3) player.buffer.push([dx, dz]);
     return;
   }
@@ -838,8 +874,8 @@ function collectCoin(row, entry) {
 function updatePowerHud() {
   const parts = [];
   if (player?.shield) parts.push('🛡️');
-  if (player?.superjump) parts.push('🚀');
   if (player?.magnetT > 0) parts.push(`🧲${Math.ceil(player.magnetT)}`);
+  if (player?.speedT > 0) parts.push(`⚡${Math.ceil(player.speedT)}`);
   ui.powerHud.textContent = parts.join(' ');
 }
 
@@ -882,11 +918,11 @@ function landPlayer() {
     const { mesh, kind } = row.power;
     row.group.remove(mesh);
     row.power = null;
-    snd.power();
+    snd.power(kind);
     particles.confetti(new THREE.Vector3(col, 0.5, -r));
     if (kind === 'shield') { player.shield = true; celebrate('SHIELD!', 'gold'); toast('🛡️ SHIELD — blocks one car/train hit, automatic'); }
     if (kind === 'magnet') { player.magnetT = 8; celebrate('MAGNET!', 'gold'); toast('🧲 MAGNET — pulls nearby coins for 8s, automatic'); }
-    if (kind === 'superjump') { player.superjump = true; celebrate('AMPHIBIOUS JUMP!', 'gold'); toast('🚀 AMPHIBIOUS JUMP — press a direction mid-air for a second hop (1 use)'); }
+    if (kind === 'speed') { player.speedT = 6; celebrate('SUPER SPEED!', 'gold'); toast('⚡ SUPER SPEED — hop faster for 6s, automatic'); }
     updatePowerHud();
   }
   // landed on a road with a car inches away → thrill
@@ -919,7 +955,7 @@ function ragdoll(power = 1) {
     vx: dir * (3.2 + Math.random() * 2.5) * power,
     vy: 6 + Math.random() * 2.5 * power,
     vz: 1.6 + Math.random(),
-    spin: (8 + Math.random() * 7) * (Math.random() < 0.5 ? 1 : -1),
+    spin: (3 + Math.random() * 3) * (Math.random() < 0.5 ? 1 : -1),
   };
 }
 
@@ -927,7 +963,7 @@ let bleatCd = 0;
 function bleat() {
   if (state !== 'playing' || !player.alive || bleatCd > 0) return;
   bleatCd = 0.5;
-  [380, 320, 390, 310].forEach((f, i) => setTimeout(() => tone(f, 0.09, 'sawtooth', 0.09, -30), i * 70));
+  playSfx('bleat');
   floats.show(player.mesh.position.clone().add(new THREE.Vector3(0, 1.0, 0)), 'BAAA!', 'thrill');
   player.squash = 1;
   const h = player.goat.userData.head;
@@ -998,6 +1034,7 @@ function die(kind) {
     ui.reviveBtn.classList.toggle('hidden', reviveUsed);
     postfx.darken = 0.25;
     sdkGameplayStop();
+    playSfx('gameover');
   }, menuDelay);
 }
 
@@ -1076,7 +1113,7 @@ ui.modeEndless.addEventListener('click', (e) => { e.stopPropagation(); audio(); 
 ui.modeDaily.addEventListener('click', (e) => { e.stopPropagation(); audio(); setMode('daily'); });
 ui.mute.addEventListener('click', (e) => {
   e.stopPropagation();
-  musicOn = !musicOn;
+  setMusicOn(!musicOn);
   localStorage.setItem('capra_music', musicOn ? '1' : '0');
   ui.mute.textContent = musicOn ? '🔊' : '🔇';
 });
@@ -1169,9 +1206,10 @@ window.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false
 const clock = new THREE.Clock();
 let worldT = 0;
 
-function nearMiss(pos) {
+function nearMiss(pos, kind = 'car') {
   nearMisses++;
   snd.whoosh();
+  if (kind === 'car') playSfx('car_horn');
   shake.add(0.18);
   postfx.aberration = Math.max(postfx.aberration, 0.4);
   floats.show(pos, 'CLOSE CALL!', 'thrill');
@@ -1206,7 +1244,7 @@ function updateVehicles(dt) {
       tr.t -= dt;
       if (tr.phase === 'idle' && tr.t <= 0) {
         tr.phase = 'warn'; tr.t = 1.3;
-        if (Math.abs(row.r - player.row) < 8) snd.warn();
+        if (Math.abs(row.r - player.row) < 8) { snd.warn(); playSfx('train_horn'); }
       } else if (tr.phase === 'warn') {
         const blink = Math.floor(tr.t * 6) % 2 === 0;
         tr.signal.userData.light.material.emissive.setHex(blink ? 0xff2020 : 0x000000);
@@ -1216,6 +1254,7 @@ function updateVehicles(dt) {
           tr.nm = false;
           tr.x = row.dir > 0 ? -LANE_W / 2 - tr.mesh.userData.totalLen : LANE_W / 2 + tr.mesh.userData.totalLen;
           tr.mesh.position.x = tr.x;      // sync now: no 1-frame flash at old position
+          if (Math.abs(row.r - player.row) < 8) playSfx('train_rumble');
         }
       } else if (tr.phase === 'run') {
         tr.x += row.dir * tr.speed * dt;
@@ -1269,7 +1308,7 @@ function checkCollisions() {
     if (px > lo - 1.3 && px < hi + 1.3 && distEdge < 1.3) tr.nm = true;
     else if (tr.nm && (px < lo - 2 || px > hi + 2 || tr.phase !== 'run')) {
       tr.nm = false;
-      if (state === 'playing') nearMiss(new THREE.Vector3(px, 1.0, -row.r));
+      if (state === 'playing') nearMiss(new THREE.Vector3(px, 1.0, -row.r), 'train');
     }
   }
 }
@@ -1278,7 +1317,8 @@ function updatePlayer(dt) {
   const goat = player.goat.userData;
   player.animT += dt;
   if (player.hopping) {
-    player.hopT = Math.min(1, player.hopT + dt / (player.hopBig ? HOP_TIME * 1.6 : HOP_TIME));
+    const hopDur = (player.hopBig ? HOP_TIME * 1.6 : HOP_TIME) * (player.speedT > 0 ? 0.55 : 1);
+    player.hopT = Math.min(1, player.hopT + dt / hopDur);
     const t = player.hopT;
     const x = player.hopFrom.x + (player.hopTo.x - player.hopFrom.x) * t;
     const z = player.hopFrom.z + (player.hopTo.z - player.hopFrom.z) * t;
@@ -1337,10 +1377,11 @@ function updatePowers(dt) {
       player.ramT = 0;
       player.shield = true;
       celebrate('RAM SHIELD!', 'gold');
-      snd.power();
+      snd.power('shield');
       updatePowerHud();
     }
   }
+  if (player.speedT > 0) player.speedT -= dt;
   if (player.magnetT > 0) {
     player.magnetT -= dt;
     for (let k = -3; k <= 3; k++) {
@@ -1381,7 +1422,7 @@ function updateDeath(dt) {
       particles.dust(p.position.clone());
     }
     p.rotation.z += deathAnim.spin * dt;
-    p.rotation.x += deathAnim.spin * 0.55 * dt;
+    p.rotation.x += deathAnim.spin * 0.3 * dt;
     const gu = player.goat.userData;
     gu.legs.forEach((l, i) => { l.rotation.x = Math.sin(t * 26 + i * 1.7) * 1.3; });
     gu.ears?.forEach((e2, i) => { e2.rotation.x = Math.sin(t * 21 + i) * 0.9; });
