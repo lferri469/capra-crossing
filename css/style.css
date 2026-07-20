@@ -525,7 +525,7 @@ html, body {
   transition: transform .08s, border-color .08s;
   /* every card identical, whatever it contains */
   width: 104px;
-  height: 144px;
+  height: 160px;
   overflow: hidden;
 }
 
@@ -549,8 +549,10 @@ html, body {
   margin: 13px 0;
 }
 
-.skin-name { font-weight: 800; font-size: 11px; text-align: center; line-height: 1.15; }
+/* fixed 2-line height reserved on name/perk so a wrapped biome name (e.g.
+   "BOSCO D'AUTUNNO") never shoves the cost row down and off the clipped card */
+.skin-name { font-weight: 800; font-size: 11px; text-align: center; line-height: 1.15; min-height: 26px; flex-shrink: 0; display: flex; align-items: center; }
 
-.skin-cost { color: #ffe066; font-size: 10px; line-height: 1.15; margin-top: auto; }
+.skin-cost { color: #ffe066; font-size: 10px; line-height: 1.15; margin-top: auto; flex-shrink: 0; }
 
-.skin-perk { color: #9fe08a; font-size: 9px; max-width: 96px; text-align: center; line-height: 1.15; }
+.skin-perk { color: #9fe08a; font-size: 9px; max-width: 96px; text-align: center; line-height: 1.15; min-height: 21px; flex-shrink: 0; display: flex; align-items: center; }

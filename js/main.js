@@ -59,6 +59,21 @@ function sdkRewarded(onDone, onFail) {
   }
   setTimeout(onDone, 400);   // local/dev fallback: grant the reward
 }
+// Platform mute (docs.crazygames.com/sdk/game/#game-settings): the site's own mute
+// button/tab-mute reaches the game through this, and it must win over our in-game
+// toggle — a muted platform never becomes audible just because musicOn is true.
+let platformMuted = false;
+function applyPlatformMute() {
+  if (platformMuted) { try { bgMusic.pause(); } catch (_) {} }
+  else if (musicOn && state !== 'title' && !adPlaying) { bgMusic.play().catch(() => {}); }
+}
+try {
+  const sdk = CG();
+  if (sdk?.game?.addSettingsChangeListener) {
+    sdk.game.addSettingsChangeListener((s) => { platformMuted = !!s?.muteAudio; applyPlatformMute(); });
+    platformMuted = !!sdk.game.settings?.muteAudio;
+  }
+} catch (_) {}
 const sdkReadyPromise = sdkInit();
 const onCrazyGames = /(^|\.)crazygames\.com$/.test(location.hostname);
 
@@ -87,7 +102,7 @@ function audio() {
   return actx;
 }
 function tone(freq, dur, type = 'square', vol = 0.12, slide = 0) {
-  if (adPlaying) return;
+  if (adPlaying || platformMuted) return;
   const ctx = audio(); if (!ctx) return;
   const o = ctx.createOscillator(), g = ctx.createGain();
   o.type = type; o.frequency.value = freq;
@@ -98,7 +113,7 @@ function tone(freq, dur, type = 'square', vol = 0.12, slide = 0) {
   o.start(); o.stop(ctx.currentTime + dur);
 }
 function noise(dur, vol = 0.2, freq = 800, type = 'lowpass') {
-  if (adPlaying) return;
+  if (adPlaying || platformMuted) return;
   const ctx = audio(); if (!ctx) return;
   const len = ctx.sampleRate * dur;
   const buf = ctx.createBuffer(1, len, ctx.sampleRate);
@@ -141,7 +156,7 @@ const SFX_FILES = {
 };
 const sfxCache = new Map();
 function playSfx(name, vol = 1) {
-  if (adPlaying) return null;   // silence during ads (CrazyGames QA)
+  if (adPlaying || platformMuted) return null;   // silence during ads + platform mute
   const def = SFX_FILES[name];
   if (!def) return null;
   const [src, relVol] = def;
@@ -185,12 +200,12 @@ const bgMusic = new Audio('assets/audio/music/bg.mp3');
 bgMusic.loop = true;
 bgMusic.volume = MUSIC_VOL;
 function startMusic() {
-  if (!musicOn || !audio()) return;
+  if (!musicOn || platformMuted || !audio()) return;
   bgMusic.play().catch(() => {});
 }
 function setMusicOn(on) {
   musicOn = on;
-  if (on) bgMusic.play().catch(() => {}); else bgMusic.pause();
+  if (on && !platformMuted) bgMusic.play().catch(() => {}); else bgMusic.pause();
 }
 
 // ---------------- Renderer / Scene ----------------
@@ -1999,6 +2014,7 @@ window.__dbg = {
   get mode() { return mode; },
   get reviveUsed() { return reviveUsed; },
   get poolSizes() { const o = {}; for (const [k, a] of objPool) o[k] = a.length; return o; },
+  get platformMuted() { return platformMuted; },
   setMode,
   revive,
   tryHop,
