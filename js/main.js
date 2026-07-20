@@ -1,11 +1,13 @@
 // Capra Crossing — cute endless hopper. Three.js, procedural assets, CrazyGames-ready.
 import * as THREE from 'three';
 import {
-  PALETTE, SKINS, loadLibrary, makeGoat, makeTree, makeRock, makeCar, makeTruck,
-  makeLog, makeTrain, makeCoin, makeEagle, makeSignal, makeLily, makeCloud, makePowerup, mat,
+  PALETTE, SKINS, ACCESSORIES, attachAccessories, loadLibrary, makeGoat, makeTree, makeRock,
+  makeCar, makeTruck, makeLog, makeTrain, makeCoin, makeEagle, makeSignal, makeLily, makeCloud,
+  makePowerup, mat,
 } from './models.js';
 import { grassTexture, roadTexture, railTexture, waterTexture } from './textures.js';
 import { Particles, FloatingText, PostFX, Shake } from './fx.js';
+import { t } from './i18n.js';
 
 // ---------------- Constants ----------------
 const TILE = 1;
@@ -22,17 +24,37 @@ async function sdkInit() { try { await CG()?.init?.(); } catch (_) {} }
 function sdkGameplayStart() { try { CG()?.game?.gameplayStart?.(); } catch (_) {} }
 function sdkGameplayStop() { try { CG()?.game?.gameplayStop?.(); } catch (_) {} }
 function sdkHappy() { try { CG()?.game?.happytime?.(); } catch (_) {} }
+function sdkLoadingStart() { try { CG()?.game?.loadingStart?.(); } catch (_) {} }
+function sdkLoadingStop() { try { CG()?.game?.loadingStop?.(); } catch (_) {} }
+// CrazyGames QA: game audio must be silent while an ad plays
+let adPlaying = false;
+function adStart() { adPlaying = true; try { bgMusic.pause(); } catch (_) {} }
+function adEnd() { adPlaying = false; if (musicOn && state !== 'title') bgMusic.play().catch(() => {}); }
 function sdkMidroll(cb) {
   const sdk = CG();
   if (sdk?.ad?.requestAd) {
-    try { sdk.ad.requestAd('midgame', { adFinished: cb, adError: cb }); return; } catch (_) {}
+    try {
+      sdk.ad.requestAd('midgame', {
+        adStarted: adStart,
+        adFinished: () => { adEnd(); cb(); },
+        adError: () => { adEnd(); cb(); },
+      });
+      return;
+    } catch (_) {}
   }
   cb();
 }
 function sdkRewarded(onDone, onFail) {
   const sdk = CG();
   if (sdk?.ad?.requestAd) {
-    try { sdk.ad.requestAd('rewarded', { adFinished: onDone, adError: onFail }); return; } catch (_) {}
+    try {
+      sdk.ad.requestAd('rewarded', {
+        adStarted: adStart,
+        adFinished: () => { adEnd(); onDone(); },
+        adError: () => { adEnd(); onFail(); },
+      });
+      return;
+    } catch (_) {}
   }
   setTimeout(onDone, 400);   // local/dev fallback: grant the reward
 }
@@ -47,6 +69,7 @@ function audio() {
   return actx;
 }
 function tone(freq, dur, type = 'square', vol = 0.12, slide = 0) {
+  if (adPlaying) return;
   const ctx = audio(); if (!ctx) return;
   const o = ctx.createOscillator(), g = ctx.createGain();
   o.type = type; o.frequency.value = freq;
@@ -57,6 +80,7 @@ function tone(freq, dur, type = 'square', vol = 0.12, slide = 0) {
   o.start(); o.stop(ctx.currentTime + dur);
 }
 function noise(dur, vol = 0.2, freq = 800, type = 'lowpass') {
+  if (adPlaying) return;
   const ctx = audio(); if (!ctx) return;
   const len = ctx.sampleRate * dur;
   const buf = ctx.createBuffer(1, len, ctx.sampleRate);
@@ -74,6 +98,7 @@ const SFX_FILES = {
   hop: ['assets/audio/sfx/goat_hop.mp3', 0.35],
   coin: ['assets/audio/sfx/coin.mp3', 0.5],
   crash: ['assets/audio/sfx/crash.mp3', 0.7],
+  impact: ['assets/audio/sfx/impact_thud.mp3', 0.85],
   splash: ['assets/audio/sfx/splash.mp3', 0.55],
   eagle: ['assets/audio/sfx/eagle_screech.mp3', 0.6],
   deny: ['assets/audio/sfx/deny.mp3', 0.35],
@@ -83,22 +108,43 @@ const SFX_FILES = {
   magnet: ['assets/audio/sfx/magnet_pickup.mp3', 0.5],
   speed: ['assets/audio/sfx/speed_pickup.mp3', 0.5],
   train_horn: ['assets/audio/sfx/train_horn.mp3', 0.55],
-  train_rumble: ['assets/audio/sfx/train_rumble.mp3', 0.3],
-  car_pass: ['assets/audio/sfx/car_pass.mp3', 0.25],
+  train_rumble: ['assets/audio/sfx/train_rumble.mp3', 0.45],
+  car_pass: ['assets/audio/sfx/car_pass.mp3', 0.4],
   car_horn: ['assets/audio/sfx/car_horn.mp3', 0.3],
   gameover: ['assets/audio/sfx/gameover.mp3', 0.5],
   bleat: ['assets/audio/sfx/goat_bleat_happy.mp3', 0.55],
+  bleat_ram: ['assets/audio/sfx/ram_bleat.mp3', 0.6],
+  bleat_alpaca: ['assets/audio/sfx/alpaca_hum.mp3', 0.55],
+  bleat_hurt: ['assets/audio/sfx/goat_bleat_hurt.mp3', 0.5],
+  bleat_pig: ['assets/audio/sfx/pig_oink.mp3', 0.6],
+  bleat_bull: ['assets/audio/sfx/bull_snort.mp3', 0.6],
+  bleat_horse: ['assets/audio/sfx/horse_neigh.mp3', 0.55],
+  bleat_deer: ['assets/audio/sfx/deer_squeak.mp3', 0.55],
 };
 const sfxCache = new Map();
-function playSfx(name) {
+function playSfx(name, vol = 1) {
+  if (adPlaying) return null;   // silence during ads (CrazyGames QA)
   const def = SFX_FILES[name];
-  if (!def) return;
+  if (!def) return null;
   const [src, relVol] = def;
   let base = sfxCache.get(name);
   if (!base) { base = new Audio(src); base.preload = 'auto'; sfxCache.set(name, base); }
   const el = base.cloneNode();
-  el.volume = Math.min(1, SFX_MASTER * relVol);
+  el.volume = Math.min(1, Math.max(0, SFX_MASTER * relVol * vol));
   el.play().catch(() => {});
+  return el;
+}
+// distance falloff for world-anchored sounds: full volume on the player's row,
+// silent past `range` rows away
+function rowFalloff(r, range = 10) {
+  const d = Math.abs(r - (player?.row ?? 0));
+  return Math.max(0, 1 - d / range);
+}
+// a row is "on stage" if the camera can actually show it — sounds from anywhere
+// else must stay silent (no more phantom trains behind you or 20 rows ahead)
+function rowAudible(r) {
+  const rel = r - camRow;
+  return rel > -5 && rel < 14;
 }
 const snd = {
   hop: () => playSfx('hop'),
@@ -131,11 +177,12 @@ function setMusicOn(on) {
 
 // ---------------- Renderer / Scene ----------------
 const canvas = document.getElementById('game-canvas');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const isMobileish = Math.min(window.innerWidth, window.innerHeight) < 500 || 'ontouchstart' in window;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.08;
 
@@ -163,7 +210,7 @@ const hemi = new THREE.HemisphereLight(0xbfe3ff, 0x8fbf6f, 0.35);
 scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff4e0, 1.25);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.mapSize.set(isMobileish ? 1024 : 2048, isMobileish ? 1024 : 2048);   // low-end friendly
 sun.shadow.camera.left = -18; sun.shadow.camera.right = 18;
 sun.shadow.camera.top = 16; sun.shadow.camera.bottom = -16;
 sun.shadow.camera.far = 60;
@@ -197,6 +244,8 @@ const dayCur = {
 };
 const _cA = new THREE.Color(), _cB = new THREE.Color();
 
+// scratch colors reused every call: dayTarget runs once per frame, zero allocations
+const _dtSky = new THREE.Color(), _dtSun = new THREE.Color();
 function dayTarget(row) {
   const BAND = 50, FADE = 10;
   const i = Math.floor(row / BAND) % 4;
@@ -204,10 +253,11 @@ function dayTarget(row) {
   const local = row % BAND;
   const t = local < BAND - FADE ? 0 : (local - (BAND - FADE)) / FADE;
   const A = DAY_PHASES[i], B = DAY_PHASES[j];
-  _cA.setHex(A.sky).lerp(_cB.setHex(B.sky), t);
+  _dtSky.setHex(A.sky).lerp(_cB.setHex(B.sky), t);
+  _dtSun.setHex(A.sun).lerp(_cA.setHex(B.sun), t);
   return {
-    sky: _cA.clone(),
-    sun: new THREE.Color(A.sun).lerp(new THREE.Color(B.sun), t),
+    sky: _dtSky,
+    sun: _dtSun,
     sunI: A.sunI + (B.sunI - A.sunI) * t,
     amb: A.amb + (B.amb - A.amb) * t,
     hemiI: A.hemiI + (B.hemiI - A.hemiI) * t,
@@ -217,7 +267,7 @@ function dayTarget(row) {
 // pure, no genRand: safe to call every frame without perturbing the daily-mode world seed
 function biomeAtmoTarget(row) {
   const BAND = 100, FADE = 20;
-  const i = Math.floor(row / BAND) % BIOMES.length;
+  const i = (Math.floor(row / BAND) + effStartBiome()) % BIOMES.length;
   const j = (i + 1) % BIOMES.length;
   const local = row % BAND;
   const t = local < BAND - FADE ? 0 : (local - (BAND - FADE)) / FADE;
@@ -268,6 +318,11 @@ let score = 0, coins = 0, best = +(localStorage.getItem('capra_best') || 0), new
 let totalCoins = +(localStorage.getItem('capra_coins') || 0);
 let ownedSkins = JSON.parse(localStorage.getItem('capra_owned') || '["bianca"]');
 let currentSkin = localStorage.getItem('capra_skin') || 'bianca';
+let ownedAcc = JSON.parse(localStorage.getItem('capra_acc') || '[]');
+let equippedAcc = JSON.parse(localStorage.getItem('capra_acc_eq') || '{"head":null,"neck":null,"back":null}');
+let ownedBiomes = JSON.parse(localStorage.getItem('capra_biomes') || '[0]');
+let startBiome = +(localStorage.getItem('capra_start_biome') || 0);
+if (!ownedBiomes.includes(startBiome)) startBiome = 0;
 let camRow = 0, minRow = 0, idleTimer = 0, eagleWarned = false;
 let mode = 'endless';          // endless | daily
 let runStarted = false;        // first forward hop fired gameplayStart
@@ -277,6 +332,7 @@ const curBest = () => (mode === 'daily' ? dailyBest : best);
 let deathAnim = null;
 let nearMisses = 0;
 let runTime = 0;
+let lastBiomeIdx = 0;
 
 // growing dark disc under the goat while the eagle closes in
 const eagleShadow = new THREE.Mesh(
@@ -290,6 +346,10 @@ function saveCoins() {
   localStorage.setItem('capra_coins', totalCoins);
   localStorage.setItem('capra_owned', JSON.stringify(ownedSkins));
   localStorage.setItem('capra_skin', currentSkin);
+  localStorage.setItem('capra_acc', JSON.stringify(ownedAcc));
+  localStorage.setItem('capra_acc_eq', JSON.stringify(equippedAcc));
+  localStorage.setItem('capra_biomes', JSON.stringify(ownedBiomes));
+  localStorage.setItem('capra_start_biome', startBiome);
 }
 
 const ui = {
@@ -314,7 +374,29 @@ const ui = {
   modeDaily: document.getElementById('mode-daily'),
   mute: document.getElementById('mute-btn'),
 };
-ui.best.textContent = `BEST ${best}`;
+// localized static UI (title screen, overlays) — set once at boot
+function applyStaticI18n() {
+  const set = (sel, txt) => { const el = document.querySelector(sel); if (el) el.textContent = txt; };
+  set('.subtitle', t('subtitle'));
+  set('#mode-endless', `🐐 ${t('endless')}`);
+  set('#mode-daily', `🗓️ ${t('daily')}`);
+  set('#loading-text', t('loading'));
+  const hints = document.querySelectorAll('.controls-hint span');
+  if (hints[0]) hints[0].textContent = t('hint_keys');
+  if (hints[1]) hints[1].textContent = t('hint_swipe');
+  set('.blink', t('press_start'));
+  set('.splash-text', t('tagline'));
+  set('#eagle-warning', t('eagle_warn'));
+  set('#revive-btn', t('revive_btn'));
+  set('#restart-btn', t('try_again'));
+  set('#share-btn', t('share_btn'));
+  set('.hint-small', t('or_enter'));
+  set('#tab-animals', `🐐 ${t('tab_animals')}`);
+  set('#tab-gear', `🎩 ${t('tab_gear')}`);
+  set('#tab-worlds', `🌍 ${t('tab_worlds')}`);
+}
+applyStaticI18n();
+ui.best.textContent = `${t('best')} ${best}`;
 ui.coins.textContent = `🪙 ${totalCoins}`;
 if (onCrazyGames && !ownedSkins.includes('crazy')) { ownedSkins.push('crazy'); saveCoins(); }
 
@@ -326,42 +408,190 @@ function toast(msg) {
   toastTimer = setTimeout(() => ui.toast.classList.add('hidden'), 1800);
 }
 
-// ---------------- Skin shop ----------------
-function renderSkinShop() {
-  ui.titleCoins.textContent = `🪙 ${totalCoins}`;
-  ui.skinRow.innerHTML = '';
+// ---------------- Shop: animals / gear / worlds ----------------
+let shopTab = 'animals';
+
+// CrazyGames-compliant rewarded unlock: always user-initiated from an explicit
+// "WATCH AD" button, reward granted only on adFinished (sdkRewarded handles
+// the local no-SDK fallback and the adError path)
+function unlockByAd(label, grant) {
+  sdkRewarded(() => {
+    grant();
+    saveCoins();
+    snd.record();
+    toast(t('t_unlocked', { name: label }));
+    renderShop();
+    refreshTitlePreview();
+  }, () => toast(t('t_ad_fail')));
+}
+
+function refreshTitlePreview() {
+  if (state === 'title' && player) {
+    scene.remove(player.mesh);
+    player = makePlayer();
+  }
+}
+
+function card(inner, cls = '') {
+  const btn = document.createElement('button');
+  btn.className = 'skin-btn' + cls;
+  btn.innerHTML = inner;
+  return btn;
+}
+
+function renderAnimals() {
   for (const s of SKINS) {
+    // progress unlock: granted automatically once the best score is reached
+    if (s.bestUnlock && best >= s.bestUnlock && !ownedSkins.includes(s.id)) {
+      ownedSkins.push(s.id); saveCoins();
+    }
     const owned = ownedSkins.includes(s.id);
-    const locked = !!s.cgOnly && !onCrazyGames && !owned;
-    const btn = document.createElement('button');
-    btn.className = 'skin-btn' + (currentSkin === s.id ? ' selected' : '') + (owned ? ' owned' : '') + (locked ? ' locked' : '');
+    const cgLocked = !!s.cgOnly && !onCrazyGames && !owned;
     const sw = `#${s.body.toString(16).padStart(6, '0')}`;
-    btn.innerHTML = `<span class="skin-swatch" style="background:${sw}"></span>` +
+    let costLine;
+    if (cgLocked) costLine = t('cg_lock');
+    else if (owned) costLine = currentSkin === s.id ? t('equipped') : t('select');
+    else if (s.adUnlock) costLine = t('watch_ad');
+    else if (s.bestUnlock) costLine = t('reach_best', { n: s.bestUnlock });
+    else costLine = `🪙 ${s.cost}`;
+    const perkTxt = t('perk_' + s.id) || s.perk;
+    const btn = card(
+      `<img class="skin-icon" src="assets/icons/${s.id}.png" alt="${s.name}"` +
+      ` onerror="this.outerHTML='<span class=&quot;skin-swatch&quot; style=&quot;background:${sw}&quot;></span>'">` +
       `<span class="skin-name">${s.name}</span>` +
-      (s.perk ? `<span class="skin-perk">${s.perk}</span>` : '') +
-      `<span class="skin-cost">${locked ? '🔒 CrazyGames only' : owned ? (currentSkin === s.id ? 'EQUIPPED' : 'SELECT') : `🪙 ${s.cost}`}</span>`;
+      (s.perk ? `<span class="skin-perk">${perkTxt}</span>` : '') +
+      `<span class="skin-cost">${costLine}</span>`,
+      (currentSkin === s.id ? ' selected' : '') + (owned ? ' owned' : '') + (cgLocked ? ' locked' : '')
+    );
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       audio();
-      if (locked) { toast('Play on CrazyGames.com to unlock Crazy Goat!'); return; }
+      if (cgLocked) { toast(t('t_cg_only')); return; }
       if (owned) {
-        currentSkin = s.id; saveCoins(); renderSkinShop();
+        currentSkin = s.id; saveCoins(); renderShop(); refreshTitlePreview();
+      } else if (s.adUnlock) {
+        unlockByAd(s.name, () => { ownedSkins.push(s.id); currentSkin = s.id; });
+      } else if (s.bestUnlock) {
+        toast(t('t_reach_best_full', { n: s.bestUnlock, name: s.name, b: best }));
       } else if (totalCoins >= s.cost) {
         totalCoins -= s.cost; ownedSkins.push(s.id); currentSkin = s.id;
-        saveCoins(); snd.coin(); renderSkinShop();
+        saveCoins(); snd.coin(); renderShop(); refreshTitlePreview();
         ui.coins.textContent = `🪙 ${totalCoins}`;
       } else {
         snd.deny();
-        return;
-      }
-      // live preview on title backdrop
-      if (state === 'title' && player) {
-        scene.remove(player.mesh);
-        player = makePlayer();
+        toast(t('t_no_coins', { name: s.name, c: s.cost }));
       }
     });
     ui.skinRow.appendChild(btn);
   }
+}
+
+function renderGear() {
+  for (const a of ACCESSORIES) {
+    const owned = ownedAcc.includes(a.id);
+    const equipped = equippedAcc[a.slot] === a.id;
+    const costLine = owned ? (equipped ? t('unwear') : t('wear')) : `🪙 ${a.cost}`;
+    const btn = card(
+      `<span class="gear-emoji">${a.emoji}</span>` +
+      `<span class="skin-name">${t('acc_' + a.id) || a.name}</span>` +
+      `<span class="skin-perk">${t('slot_' + a.slot)}</span>` +
+      `<span class="skin-cost">${costLine}</span>`,
+      (equipped ? ' selected' : '') + (owned ? ' owned' : '')
+    );
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      audio();
+      if (owned) {
+        equippedAcc[a.slot] = equipped ? null : a.id;   // one item per slot
+        saveCoins(); renderShop(); refreshTitlePreview();
+      } else if (totalCoins >= a.cost) {
+        totalCoins -= a.cost; ownedAcc.push(a.id); equippedAcc[a.slot] = a.id;
+        saveCoins(); snd.coin(); renderShop(); refreshTitlePreview();
+        ui.coins.textContent = `🪙 ${totalCoins}`;
+      } else {
+        snd.deny();
+        toast(t('t_no_coins', { name: t('acc_' + a.id) || a.name, c: a.cost }));
+      }
+    });
+    ui.skinRow.appendChild(btn);
+  }
+}
+
+const BIOME_COST = 400;
+function renderWorlds() {
+  BIOMES.forEach((B, i) => {
+    const owned = ownedBiomes.includes(i);
+    const isStart = startBiome === i;
+    const btn = card(
+      `<span class="gear-emoji">${B.emoji}</span>` +
+      `<span class="skin-name">${t('biome_' + i)}</span>` +
+      (owned
+        ? `<span class="skin-cost">${isStart ? t('starting_here') : t('start_here')}</span>`
+        : `<span class="skin-perk">${t('unlock_hint')}</span>`),
+      (isStart ? ' selected' : '') + (owned ? ' owned' : '')
+    );
+    if (!owned) {
+      // two explicit unlock paths, both user-initiated
+      const rowEl = document.createElement('span');
+      rowEl.className = 'unlock-row';
+      const buyBtn = document.createElement('span');
+      buyBtn.className = 'mini-btn';
+      buyBtn.textContent = `🪙 ${BIOME_COST}`;
+      buyBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        audio();
+        if (totalCoins >= BIOME_COST) {
+          totalCoins -= BIOME_COST; ownedBiomes.push(i); startBiome = i;
+          saveCoins(); snd.coin(); renderShop();
+          ui.coins.textContent = `🪙 ${totalCoins}`;
+          if (state === 'title') resetWorld();
+        } else {
+          snd.deny();
+          toast(t('t_no_coins', { name: t('biome_' + i), c: BIOME_COST }));
+        }
+      });
+      const adBtn = document.createElement('span');
+      adBtn.className = 'mini-btn';
+      adBtn.textContent = '📺 AD';
+      adBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        audio();
+        unlockByAd(t('biome_' + i), () => {
+          ownedBiomes.push(i); startBiome = i;
+          if (state === 'title') resetWorld();
+        });
+      });
+      rowEl.append(buyBtn, adBtn);
+      btn.appendChild(rowEl);
+    }
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      audio();
+      if (!owned) return;   // unlock only via the two explicit mini buttons
+      startBiome = i; saveCoins(); renderShop();
+      if (state === 'title') resetWorld();   // instant preview of the new landscape
+    });
+    ui.skinRow.appendChild(btn);
+  });
+}
+
+function renderShop() {
+  ui.titleCoins.textContent = `🪙 ${totalCoins}`;
+  for (const [id, tab] of [['tab-animals', 'animals'], ['tab-gear', 'gear'], ['tab-worlds', 'worlds']]) {
+    document.getElementById(id).classList.toggle('selected', shopTab === tab);
+  }
+  ui.skinRow.innerHTML = '';
+  if (shopTab === 'animals') renderAnimals();
+  else if (shopTab === 'gear') renderGear();
+  else renderWorlds();
+}
+for (const [id, tab] of [['tab-animals', 'animals'], ['tab-gear', 'gear'], ['tab-worlds', 'worlds']]) {
+  document.getElementById(id).addEventListener('click', (e) => {
+    e.stopPropagation();
+    audio();
+    shopTab = tab;
+    renderShop();
+  });
 }
 
 // ---------------- Lane generation ----------------
@@ -396,29 +626,37 @@ const dailyLabel = () => {
 
 // ---------------- Biomes (bands of 100 rows, linear 20-row blend) ----------------
 const BIOMES = [
-  { name: 'campagna', grassA: 0xa8d878, grassB: 0x9ccc68, trees: ['tree_default', 'tree_oak', 'tree_fat', 'tree_detailed'], sky: { r: 1, g: 1, b: 1 }, fogNear: 18, fogFar: 34 },
-  { name: 'autunno', grassA: 0xcdb45e, grassB: 0xc1a852, trees: ['tree_default_fall', 'tree_oak_fall', 'tree_detailed_fall', 'tree_fat_fall'], sky: { r: 1.08, g: 0.96, b: 0.8 }, fogNear: 16, fogFar: 30 },
-  { name: 'costa', grassA: 0xe6d8a2, grassB: 0xdccd94, trees: ['tree_palm', 'tree_palmShort', 'tree_palmTall', 'tree_palmBend', 'cactus_short', 'cactus_tall'], sky: { r: 0.92, g: 1.04, b: 1.1 }, fogNear: 21, fogFar: 39 },
-  { name: 'deserto', grassA: 0xe8c27a, grassB: 0xdbb066, trees: ['cactus_short', 'cactus_tall'], sky: { r: 1.16, g: 0.97, b: 0.76 }, fogNear: 13, fogFar: 26 },
-  { name: 'montagna', grassA: 0x9fae9a, grassB: 0x93a38d, trees: ['tree_pineDefaultA', 'tree_pineDefaultB', 'tree_pineRoundA', 'tree_pineRoundB', 'tree_cone'], sky: { r: 0.94, g: 1.0, b: 1.1 }, fogNear: 22, fogFar: 40 },
-  { name: 'inverno', grassA: 0xdde8ea, grassB: 0xd0dde0, trees: ['tree_pineDefaultA', 'tree_pineDefaultB', 'tree_pineRoundA', 'tree_pineRoundB'], sky: { r: 1.0, g: 1.03, b: 1.14 }, fogNear: 15, fogFar: 28 },
-  { name: 'bosco scuro', grassA: 0x87996a, grassB: 0x7b8d5f, trees: ['tree_default_dark', 'tree_oak_dark', 'tree_detailed_dark', 'tree_blocks_dark'], sky: { r: 0.74, g: 0.82, b: 0.72 }, fogNear: 11, fogFar: 22 },
+  { name: 'campagna', label: 'MEADOWLANDS', emoji: '🌼', style: 'meadow', water: 0x4aa8e0, grassA: 0xa8d878, grassB: 0x9ccc68, trees: ['tree_default', 'tree_oak', 'tree_fat', 'tree_detailed'], sky: { r: 1, g: 1, b: 1 }, fogNear: 18, fogFar: 34 },
+  { name: 'autunno', label: 'AUTUMN WOODS', emoji: '🍂', style: 'leaves', water: 0x4a98c8, grassA: 0xcdb45e, grassB: 0xc1a852, trees: ['tree_default_fall', 'tree_oak_fall', 'tree_detailed_fall', 'tree_fat_fall'], sky: { r: 1.08, g: 0.96, b: 0.8 }, fogNear: 16, fogFar: 30 },
+  { name: 'costa', label: 'SUNNY COAST', emoji: '🏖️', style: 'sand', water: 0x2ec4c9, grassA: 0xe6d8a2, grassB: 0xdccd94, trees: ['tree_palm', 'tree_palmShort', 'tree_palmTall', 'tree_palmBend', 'cactus_short', 'cactus_tall'], sky: { r: 0.92, g: 1.04, b: 1.1 }, fogNear: 21, fogFar: 39 },
+  { name: 'deserto', label: 'DUSTY DESERT', emoji: '🌵', style: 'sand', water: 0x58b0c0, grassA: 0xe8c27a, grassB: 0xdbb066, trees: ['cactus_short', 'cactus_tall'], sky: { r: 1.16, g: 0.97, b: 0.76 }, fogNear: 13, fogFar: 26 },
+  { name: 'montagna', label: 'HIGH PEAKS', emoji: '⛰️', style: 'alpine', water: 0x4a9fd8, grassA: 0x9fae9a, grassB: 0x93a38d, trees: ['tree_pineDefaultA', 'tree_pineDefaultB', 'tree_pineRoundA', 'tree_pineRoundB', 'tree_cone'], sky: { r: 0.94, g: 1.0, b: 1.1 }, fogNear: 22, fogFar: 40 },
+  { name: 'inverno', label: 'FROZEN FIELDS', emoji: '❄️', style: 'snow', water: 0x9fd4e8, grassA: 0xdde8ea, grassB: 0xd0dde0, trees: ['tree_pineDefaultA', 'tree_pineDefaultB', 'tree_pineRoundA', 'tree_pineRoundB'], sky: { r: 1.0, g: 1.03, b: 1.14 }, fogNear: 15, fogFar: 28 },
+  { name: 'bosco scuro', label: 'DARK FOREST', emoji: '🍄', style: 'forest', water: 0x3a7a8a, grassA: 0x87996a, grassB: 0x7b8d5f, trees: ['tree_default_dark', 'tree_oak_dark', 'tree_detailed_dark', 'tree_blocks_dark'], sky: { r: 0.74, g: 0.82, b: 0.72 }, fogNear: 11, fogFar: 22 },
 ];
 const _gA = new THREE.Color(), _gB = new THREE.Color();
 
+// chosen starting landscape shifts the whole biome cycle (endless only —
+// the daily challenge world must be identical for every player)
+const effStartBiome = () => (mode === 'daily' ? 0 : startBiome);
+
 function biomeAt(r) {
   const BAND = 100, FADE = 20;
-  const i = Math.floor(r / BAND) % BIOMES.length;
+  const i = (Math.floor(r / BAND) + effStartBiome()) % BIOMES.length;
   const j = (i + 1) % BIOMES.length;
   const local = r % BAND;
   const t = local < BAND - FADE ? 0 : (local - (BAND - FADE)) / FADE;
   const A = BIOMES[i], B = BIOMES[j];
+  const cross = genRand() < t;                  // gradual mix inside the fade
   return {
     grassA: _gA.setHex(A.grassA).lerp(_gB.setHex(B.grassA), t).getHex() & 0xF0F0F0,
     grassB: _gA.setHex(A.grassB).lerp(_gB.setHex(B.grassB), t).getHex() & 0xF0F0F0,
-    trees: genRand() < t ? B.trees : A.trees,   // gradual model mix inside the fade
+    trees: cross ? B.trees : A.trees,
+    style: cross ? B.style : A.style,
+    water: _gA.setHex(A.water).lerp(_gB.setHex(B.water), t).getHex() & 0xF0F0F0,
   };
 }
+const biomeIndexAt = (r) => (Math.floor(Math.max(r, 0) / 100) + effStartBiome()) % BIOMES.length;
 
 let genState = { lastTypes: [], lastPowerRow: 0 };
 
@@ -460,7 +698,11 @@ function poolPut(key, obj) {
   if (!a) objPool.set(key, a = []);
   if (a.length < 40) a.push(obj);
 }
+function stopRumble(tr) {
+  if (tr?.rumble) { try { tr.rumble.pause(); } catch (_) {} tr.rumble = null; }
+}
 function recycleRow(row) {
+  stopRumble(row.train);
   for (const v of row.vehicles) poolPut(v.mesh.userData._pk, v.mesh);
   for (const l of row.logs) poolPut(l.mesh.userData._pk, l.mesh);
   for (const c of row.coins || []) poolPut('coin', c.mesh);
@@ -524,13 +766,13 @@ function spawnTree(size, names) {
   return t;
 }
 
-// textured lane materials, cached per type+color
+// textured lane materials, cached per type+color(+biome style for grass)
 const laneMats = new Map();
-function laneMat(type, color) {
-  const key = `${type}_${color}`;
+function laneMat(type, color, style = 'meadow') {
+  const key = `${type}_${color}_${style}`;
   if (!laneMats.has(key)) {
     let tex;
-    if (type === 'grass') tex = grassTexture(color);
+    if (type === 'grass') tex = grassTexture(color, style);
     else if (type === 'road') tex = roadTexture(color);
     else if (type === 'rail') tex = railTexture(color);
     else tex = waterTexture(color);
@@ -539,19 +781,23 @@ function laneMat(type, color) {
   return laneMats.get(key);
 }
 
-function lanePlane(type, color, y = 0) {
+function lanePlane(type, color, y = 0, style = 'meadow') {
   let m;
   if (type === 'water') {
     m = poolGet('lane_water');
     if (!m) {
       m = new THREE.Mesh(GEO.lane, new THREE.MeshLambertMaterial({ color: 0xffffff, map: waterTexture(color).clone() }));
       m.userData._pk = 'lane_water';
+    } else {
+      m.material.map?.dispose();                      // free the old GPU texture
+      m.material.map = waterTexture(color).clone();   // recolor pooled water to the biome
+      m.material.needsUpdate = true;
     }
   } else {
     m = poolGet('lane_solid');
-    if (m) m.material = laneMat(type, color);
+    if (m) m.material = laneMat(type, color, style);
     else {
-      m = new THREE.Mesh(GEO.lane, laneMat(type, color));
+      m = new THREE.Mesh(GEO.lane, laneMat(type, color, style));
       m.userData._pk = 'lane_solid';
     }
   }
@@ -573,7 +819,7 @@ function buildRow(r) {
 
   if (type === 'grass') {
     const biome = biomeAt(r);
-    row.lane = lanePlane('grass', r % 2 ? biome.grassA : biome.grassB);
+    row.lane = lanePlane('grass', r % 2 ? biome.grassA : biome.grassB, 0, biome.style);
     group.add(row.lane);
     // frame trees outside playfield
     for (let c = -20; c <= 20; c++) {
@@ -612,7 +858,8 @@ function buildRow(r) {
       const sinceP = r - genState.lastPowerRow;
       if (r > 6 && cells.length > 4 && (sinceP >= 46 || (sinceP >= 34 && genRand() < 0.25))) {
         const c = gpick(cells); cells.splice(cells.indexOf(c), 1);
-        const kind = gpick(['shield', 'magnet', 'speed']);
+        // hearts are rarer than the other power-ups
+        const kind = genRand() < 0.18 ? 'heart' : gpick(['shield', 'magnet', 'speed']);
         const pu = poolGet('pu_' + kind) || makePowerup(kind);
         pu.userData._pk = 'pu_' + kind;
         pu.position.set(c, 0.45, 0); group.add(pu);
@@ -640,21 +887,43 @@ function buildRow(r) {
     }
     row.dir = dir; row.speed = speed;
   } else if (type === 'river') {
-    const water = lanePlane('water', PALETTE.water, -0.08);
+    const water = lanePlane('water', biomeAt(r).water, -0.08);
     row.lane = water;
     group.add(water);
     const dir = genRand() < 0.5 ? 1 : -1;
     const speed = grand(1.25, 1.8) + diff * 1.3 + late * 1.0;
     const n = grandi(4, 5) + (speed < 1.5 ? 1 : 0);
     const span = LANE_W;
-    for (let i = 0; i < n; i++) {
+    const addLog = (x) => {
       const tiles = late > 0.35 && genRand() < 0.4 + late * 0.3 ? 2 : grandi(2, 3);
       let l = poolGet('log_' + tiles);
       if (!l) { l = makeLog(tiles); l.userData._pk = 'log_' + tiles; }
-      const x = -span / 2 + (i + grand(0.2, 0.8)) * (span / n);
       l.position.x = x; l.position.y = 0.02;
       group.add(l);
       row.logs.push({ mesh: l, x, halfLen: l.userData.halfLen, topY: l.userData.topY, bobPhase: grand(0, 6.28) });
+    };
+    for (let i = 0; i < n; i++) addLog(-span / 2 + (i + grand(0.2, 0.8)) * (span / n));
+    // crossability guarantee: random jitter used to open gaps of up to ~17 units —
+    // longer than the eagle timer allows you to wait. Cap every water gap (incl.
+    // the wraparound one) so a log is always reachable in time.
+    const MAX_GAP = 4.2;
+    const beltLen = span + 4;    // logs wrap at ±(span/2 + 2): the real belt length
+    for (let pass = 0; pass < 8; pass++) {
+      row.logs.sort((a, b) => a.x - b.x);
+      const inserts = [];
+      for (let i = 0; i < row.logs.length; i++) {
+        const a = row.logs[i];
+        const b = row.logs[(i + 1) % row.logs.length];
+        const bx = i + 1 < row.logs.length ? b.x : b.x + beltLen;   // wraparound gap
+        const gap = bx - a.x - a.halfLen - b.halfLen;
+        if (gap > MAX_GAP) {
+          let fx = a.x + a.halfLen + gap / 2;
+          if (fx > span / 2 + 2) fx -= beltLen;
+          inserts.push(fx);
+        }
+      }
+      if (!inserts.length) break;
+      for (const fx of inserts) addLog(fx);
     }
     // lilies deco
     for (let i = 0; i < 3; i++) {
@@ -698,16 +967,19 @@ function buildRow(r) {
   return row;
 }
 
-let backdrop = null;
+let backdrop = null, backdropBiome = -1;
 function buildBackdrop() {
+  if (backdrop) scene.remove(backdrop);
+  const B = BIOMES[effStartBiome()];
+  backdropBiome = effStartBiome();
   backdrop = new THREE.Group();
   for (let r = -1; r >= -12; r--) {
     const g = new THREE.Group();
     g.position.z = -r * TILE;
-    g.add(lanePlane('grass', r % 2 ? PALETTE.grassA : PALETTE.grassB));
+    g.add(lanePlane('grass', r % 2 ? B.grassA : B.grassB, 0, B.style));
     for (let c = -20; c <= 20; c++) {
       if (Math.abs(c) <= COLS && r >= -2) continue;
-      if (Math.random() < 0.4) { const t = makeTree(randi(1, 2)); t.position.x = c; g.add(t); }
+      if (Math.random() < 0.4) { const t = makeTree(randi(1, 2), B.trees); t.position.x = c; g.add(t); }
     }
     backdrop.add(g);
   }
@@ -780,9 +1052,11 @@ function placeRecordFlag() {
   }
 }
 
+let genMaxRow = -1;   // rows are built strictly in order: skip the O(row) rescan per frame
 function ensureRows() {
   const target = Math.floor(camRow) + AHEAD;
-  for (let r = 0; r <= target; r++) if (!rows.has(r)) buildRow(r);
+  for (let r = genMaxRow + 1; r <= target; r++) buildRow(r);
+  if (target > genMaxRow) genMaxRow = target;
   // cull behind
   for (const [r, row] of rows) {
     if (r < camRow - BEHIND) {
@@ -795,6 +1069,7 @@ function ensureRows() {
 // ---------------- Player ----------------
 function makePlayer() {
   const goat = makeGoat(currentSkin);
+  attachAccessories(goat, equippedAcc);    // cosmetic gear from the shop
   goat.scale.setScalar(0.78);              // goat smaller than cars, real-world proportions
   const g = new THREE.Group();             // wrapper: squash anim scales this, not the base
   g.add(goat);
@@ -807,6 +1082,7 @@ function makePlayer() {
     buffer: [], facing: 0, squash: 0, alive: true,
     animT: 0, blinkT: rand(1, 4),
     shield: currentSkin === 'montone', magnetT: 0, speedT: 0, invulnT: 0, ramT: 0,
+    lives: 0,                              // extra life (❤️ pickup), max 1
   };
 }
 
@@ -827,12 +1103,28 @@ function tryHop(dx, dz) {
   player.hopBig = false;
   const targetRow = rows.get(toRow);
   if (targetRow?.trees.has(toCol)) {
-    snd.deny();
-    player.facing = Math.atan2(dx, -dz || 0.0001);
-    player.mesh.rotation.y = player.facing;
-    // bump feedback: leaf burst on the tree
-    particles.leaves(new THREE.Vector3(toCol, 0.7, -toRow));
-    return;
+    // Bull perk: charge straight through, smashing the obstacle
+    if (currentSkin === 'bull') {
+      targetRow.trees.delete(toCol);
+      const idx = targetRow.props.findIndex((o) => Math.round(o.position.x) === toCol);
+      if (idx >= 0) {
+        const o = targetRow.props[idx];
+        targetRow.props.splice(idx, 1);
+        poolPut(o.userData._pk, o);
+      }
+      playSfx('impact', 0.7);
+      shake.add(0.15);
+      particles.leaves(new THREE.Vector3(toCol, 0.7, -toRow));
+      celebrate(t('c_smash'), 'thrill');
+      // fall through: the hop continues into the now-cleared cell
+    } else {
+      snd.deny();
+      player.facing = Math.atan2(dx, -dz || 0.0001);
+      player.mesh.rotation.y = player.facing;
+      // bump feedback: leaf burst on the tree
+      particles.leaves(new THREE.Vector3(toCol, 0.7, -toRow));
+      return;
+    }
   }
   if (!runStarted && dz > 0) { runStarted = true; sdkGameplayStart(); }
   player.hopping = true;
@@ -871,12 +1163,15 @@ function collectCoin(row, entry) {
   snd.coin();
 }
 
+let lastHud = '';
 function updatePowerHud() {
   const parts = [];
+  if (player?.lives > 0) parts.push('❤️');
   if (player?.shield) parts.push('🛡️');
   if (player?.magnetT > 0) parts.push(`🧲${Math.ceil(player.magnetT)}`);
   if (player?.speedT > 0) parts.push(`⚡${Math.ceil(player.speedT)}`);
-  ui.powerHud.textContent = parts.join(' ');
+  const s = parts.join(' ');
+  if (s !== lastHud) { lastHud = s; ui.powerHud.textContent = s; }   // no DOM churn per frame
 }
 
 function celebrate(msg, cls = 'gold') {
@@ -893,12 +1188,20 @@ function landPlayer() {
     particles.dust(new THREE.Vector3(player.hopTo.x, 0.05, -r));
   }
   if (r > score) {
+    // biome banner the moment the goat crosses into a new landscape
+    const bi = biomeIndexAt(r);
+    if (bi !== lastBiomeIdx) {
+      lastBiomeIdx = bi;
+      const B = BIOMES[bi];
+      celebrate(`${B.emoji} ${t('biome_' + bi)}`, 'milestone');
+      snd.milestone();
+    }
     score = r;
     ui.score.textContent = score;
     if (score > curBest() && !newRecord && curBest() >= 5) {
       newRecord = true;
       snd.record();
-      celebrate('NEW BEST!', 'record');
+      celebrate(t('c_new_best'), 'record');
       particles.confetti(player.mesh.position.clone().add(new THREE.Vector3(0, 0.8, 0)));
       postfx.flash = 0.25;
     }
@@ -920,9 +1223,13 @@ function landPlayer() {
     row.power = null;
     snd.power(kind);
     particles.confetti(new THREE.Vector3(col, 0.5, -r));
-    if (kind === 'shield') { player.shield = true; celebrate('SHIELD!', 'gold'); toast('🛡️ SHIELD — blocks one car/train hit, automatic'); }
-    if (kind === 'magnet') { player.magnetT = 8; celebrate('MAGNET!', 'gold'); toast('🧲 MAGNET — pulls nearby coins for 8s, automatic'); }
-    if (kind === 'speed') { player.speedT = 6; celebrate('SUPER SPEED!', 'gold'); toast('⚡ SUPER SPEED — hop faster for 6s, automatic'); }
+    if (kind === 'shield') { player.shield = true; celebrate(t('c_shield'), 'gold'); toast(t('t_shield')); }
+    if (kind === 'magnet') { player.magnetT = 8; celebrate(t('c_magnet'), 'gold'); toast(t('t_magnet')); }
+    if (kind === 'speed') { player.speedT = 6; celebrate(t('c_speed'), 'gold'); toast(t('t_speed')); }
+    if (kind === 'heart') {
+      if (player.lives < 1) { player.lives = 1; celebrate(t('c_life'), 'record'); toast(t('t_heart')); }
+      else { const bonus = 10; coins += bonus; totalCoins += bonus; saveCoins(); ui.coins.textContent = `🪙 ${totalCoins}`; celebrate(`+${bonus}`, 'gold'); }
+    }
     updatePowerHud();
   }
   // landed on a road with a car inches away → thrill
@@ -960,11 +1267,21 @@ function ragdoll(power = 1) {
 }
 
 let bleatCd = 0;
+// each species has its own voice and cry
+const VOICES = {
+  montone: { sfx: 'bleat_ram', text: 'BRAAA!' },
+  alpaca: { sfx: 'bleat_alpaca', text: 'MHMM~' },
+  pig: { sfx: 'bleat_pig', text: 'OINK!' },
+  bull: { sfx: 'bleat_bull', text: 'SNORT!' },
+  horse: { sfx: 'bleat_horse', text: 'NEIGH!' },
+  deer: { sfx: 'bleat_deer', text: 'EEP!' },
+};
 function bleat() {
   if (state !== 'playing' || !player.alive || bleatCd > 0) return;
   bleatCd = 0.5;
-  playSfx('bleat');
-  floats.show(player.mesh.position.clone().add(new THREE.Vector3(0, 1.0, 0)), 'BAAA!', 'thrill');
+  const voice = VOICES[currentSkin] || { sfx: 'bleat', text: 'BAAA!' };
+  playSfx(voice.sfx);
+  floats.show(player.mesh.position.clone().add(new THREE.Vector3(0, 1.0, 0)), voice.text, 'thrill');
   player.squash = 1;
   const h = player.goat.userData.head;
   if (h) { h.rotation.z = 0.35; setTimeout(() => { h.rotation.z = 0; }, 220); }
@@ -982,10 +1299,44 @@ function die(kind) {
     player.invulnT = 1.2;
     updatePowerHud();
     snd.crash();
+    playSfx('impact');
     shake.add(0.3);
     postfx.flash = 0.3;
     particles.crash(player.mesh.position.clone());
-    celebrate('SHIELD DOWN!', 'thrill');
+    celebrate(t('c_shield_down'), 'thrill');
+    return;
+  }
+  // shield also saves the goat from the eagle: one grab absorbed, bird driven off
+  if (kind === 'eagle' && player.shield) {
+    player.shield = false;
+    player.ramT = 0;
+    player.invulnT = 1.5;
+    updatePowerHud();
+    if (eagle) { scene.remove(eagle.g); eagle = null; }
+    idleTimer = 0; eagleWarned = false;
+    ui.eagleWarn.classList.add('hidden');
+    eagleShadow.visible = false;
+    minRow = Math.min(minRow, player.row - 1);   // slack so it doesn't re-trigger instantly
+    snd.eagle();
+    shake.add(0.35);
+    postfx.flash = 0.3;
+    particles.feathers(player.mesh.position.clone().add(new THREE.Vector3(0, 0.8, 0)));
+    celebrate(t('c_shield_saved'), 'thrill');
+    return;
+  }
+  // extra life: one death fully absorbed, instant respawn (max 1 held)
+  if (player.lives > 0) {
+    player.lives = 0;
+    updatePowerHud();
+    if (kind === 'crash' || kind === 'train') { snd.crash(); playSfx('impact'); }
+    if (kind === 'splash') snd.splash();
+    if (kind === 'eagle') snd.eagle();
+    playSfx('bleat_hurt');
+    shake.add(0.4);
+    postfx.flash = 0.35;
+    particles.crash(player.mesh.position.clone());
+    respawnPlayer(2.5);
+    celebrate(t('c_life'), 'record');
     return;
   }
   player.alive = false;
@@ -998,35 +1349,35 @@ function die(kind) {
   postfx.flash = 0.35;
   shake.add(kind === 'splash' ? 0.35 : 0.6);
   const p = player.mesh.position;
-  if (kind === 'crash') { snd.crash(); deathAnim = ragdoll(); ui.goReason.textContent = 'SQUASHED!'; particles.crash(p.clone()); }
-  if (kind === 'splash') { snd.splash(); deathAnim = { kind, t: 0 }; ui.goReason.textContent = 'GLUG GLUG GLUG...'; particles.splash(p.clone()); }
-  if (kind === 'train') { snd.crash(); deathAnim = ragdoll(1.6); ui.goReason.textContent = 'TRAIN FLATTENED!'; particles.crash(p.clone()); }
-  if (kind === 'eagle') { snd.eagle(); deathAnim = { kind, t: 0 }; ui.goReason.textContent = 'EAGLE SNATCHED!'; particles.feathers(p.clone().add(new THREE.Vector3(0, 0.8, 0))); }
+  if (kind === 'crash') { snd.crash(); playSfx('impact'); playSfx('bleat_hurt'); deathAnim = ragdoll(); ui.goReason.textContent = t('go_crash'); particles.crash(p.clone()); }
+  if (kind === 'splash') { snd.splash(); deathAnim = { kind, t: 0 }; ui.goReason.textContent = t('go_splash'); particles.splash(p.clone()); }
+  if (kind === 'train') { snd.crash(); playSfx('impact'); playSfx('bleat_hurt'); deathAnim = ragdoll(1.6); ui.goReason.textContent = t('go_train'); particles.crash(p.clone()); }
+  if (kind === 'eagle') { snd.eagle(); playSfx('bleat_hurt'); deathAnim = { kind, t: 0 }; ui.goReason.textContent = t('go_eagle'); particles.feathers(p.clone().add(new THREE.Vector3(0, 0.8, 0))); }
   if (mode === 'daily') {
     if (score > dailyBest) {
       dailyBest = score;
       localStorage.setItem(dailyKey(), dailyBest);
       ui.goBest.classList.add('new-record');
-      ui.goBest.textContent = `NEW DAILY BEST ${dailyBest}!`;
+      ui.goBest.textContent = t('new_daily_best_n', { n: dailyBest });
     } else {
       ui.goBest.classList.remove('new-record');
-      ui.goBest.textContent = `DAILY BEST ${dailyBest}`;
+      ui.goBest.textContent = t('daily_best_n', { n: dailyBest });
     }
-    ui.best.textContent = `DAILY ${dailyLabel()} · ${dailyBest}`;
+    ui.best.textContent = `${t('daily_hud')} ${dailyLabel()} · ${dailyBest}`;
   } else if (score > best) {
     best = score;
     localStorage.setItem('capra_best', best);
     ui.goBest.classList.add('new-record');
-    ui.goBest.textContent = `NEW BEST ${best}!`;
-    ui.best.textContent = `BEST ${best}`;
+    ui.goBest.textContent = t('new_best_n', { n: best });
+    ui.best.textContent = `${t('best')} ${best}`;
   } else {
     ui.goBest.classList.remove('new-record');
-    ui.goBest.textContent = `BEST ${best}`;
-    ui.best.textContent = `BEST ${best}`;
+    ui.goBest.textContent = `${t('best')} ${best}`;
+    ui.best.textContent = `${t('best')} ${best}`;
   }
   ui.goScore.textContent = score;
   ui.goStats.innerHTML =
-    `<span>🪙 ${coins}</span><span>⚡ ${nearMisses} close call${nearMisses === 1 ? '' : 's'}</span>` +
+    `<span>🪙 ${coins}</span><span>⚡ ${nearMisses} ${t('close_calls')}</span>` +
     `<span>⏱️ ${Math.round(runTime)}s</span>`;
   const menuDelay = deathAnim?.kind === 'ragdoll' ? 1400 : 700;
   setTimeout(() => {
@@ -1041,9 +1392,7 @@ function die(kind) {
 // ---------------- Share ----------------
 async function shareScore() {
   const emo = score >= best && score > 0 ? '👑' : score >= 100 ? '🔥' : score >= 50 ? '⚡' : '🐐';
-  const chal = mode === 'daily' ? ` in the DAILY CHALLENGE ${dailyLabel()}` : '';
-  const text = `${emo} I took the goat ${score} hops in GOAT CROSSER${chal}! ` +
-    `(best: ${curBest()}${nearMisses ? `, close calls: ${nearMisses}` : ''}) — can you beat me?`;
+  const text = t('share_text', { emo, n: score, b: curBest() });
   try {
     if (navigator.share) {
       await navigator.share({ text, title: 'Goat Crosser 🐐' });
@@ -1052,7 +1401,7 @@ async function shareScore() {
   } catch (_) { /* cancelled → fallback */ }
   try {
     await navigator.clipboard.writeText(text);
-    toast('📋 Score copied — paste it anywhere!');
+    toast(t('t_copied'));
   } catch (_) {
     toast(text);
   }
@@ -1062,15 +1411,16 @@ async function shareScore() {
 function resetWorld() {
   for (const [, row] of rows) recycleRow(row);
   rows.clear();
+  genMaxRow = -1;
   genState = { lastTypes: [], lastPowerRow: 0 };
   genRand = mode === 'daily' ? mulberry32((dailySeed() * 2654435761) >>> 0) : Math.random;
   dailyBest = +(localStorage.getItem(dailyKey()) || 0);
   if (player) scene.remove(player.mesh);
   if (eagle) { scene.remove(eagle.g); eagle = null; }
-  if (!backdrop) buildBackdrop();
+  if (!backdrop || backdropBiome !== effStartBiome()) buildBackdrop();
   if (!clouds.length) buildClouds();
   player = makePlayer();
-  score = 0; coins = 0; newRecord = false; nearMisses = 0; runTime = 0;
+  score = 0; coins = 0; newRecord = false; nearMisses = 0; runTime = 0; lastBiomeIdx = effStartBiome();
   camRow = 0; minRow = -2; idleTimer = 0; deathAnim = null;
   runStarted = false; reviveUsed = false; coinCarry = 0;
   timeScale = 1;
@@ -1079,7 +1429,7 @@ function resetWorld() {
   eagleShadow.visible = false;
   ui.score.textContent = '0';
   ui.coins.textContent = `🪙 ${totalCoins}`;
-  ui.best.textContent = mode === 'daily' ? `DAILY ${dailyLabel()} · ${dailyBest}` : `BEST ${best}`;
+  ui.best.textContent = mode === 'daily' ? `${t('daily_hud')} ${dailyLabel()} · ${dailyBest}` : `${t('best')} ${best}`;
   updatePowerHud();
   placeRecordFlag();
   ensureRows();
@@ -1091,6 +1441,16 @@ function startGame() {
   resetWorld();
   state = 'playing';
   startMusic();
+  // Crazy Goat perk: every run kicks off with a random power-up
+  if (currentSkin === 'crazy') {
+    const kind = pick(['shield', 'magnet', 'speed']);
+    if (kind === 'shield') player.shield = true;
+    if (kind === 'magnet') player.magnetT = 8;
+    if (kind === 'speed') player.speedT = 6;
+    updatePowerHud();
+    snd.power(kind);
+    toast(t('t_crazy_start', { kind: kind.toUpperCase() }));
+  }
 }
 
 // interstitial only every 3 cumulative deaths, always outside active gameplay
@@ -1138,54 +1498,59 @@ window.addEventListener('keydown', (e) => {
 ui.restart.addEventListener('click', () => { audio(); restartFromMenu(); });
 ui.reviveBtn.addEventListener('click', (e) => { e.stopPropagation(); audio(); revive(); });
 
+// bring the goat back on the nearest grass row at a free column
+function respawnPlayer(invuln = 2.5) {
+  ui.over.classList.add('hidden');
+  postfx.darken = 0;
+  deathAnim = null;
+  if (eagle) { scene.remove(eagle.g); eagle = null; }
+  let r = player.row;
+  for (let k = 0; k < 6; k++) {
+    const row = rows.get(player.row - k);
+    if (row && row.type === 'grass') { r = player.row - k; break; }
+  }
+  let col = Math.max(-COLS, Math.min(COLS, Math.round(player.x) || 0));
+  const row = rows.get(r);
+  if (row?.trees.has(col)) {
+    for (let c = 1; c <= COLS * 2; c++) {
+      if (!row.trees.has(col + c) && col + c <= COLS) { col = col + c; break; }
+      if (!row.trees.has(col - c) && col - c >= -COLS) { col = col - c; break; }
+    }
+  }
+  player.row = r; player.col = col; player.x = col;
+  player.onLog = null; player.hopping = false; player.buffer = [];
+  player.alive = true; player.invulnT = invuln;
+  player.mesh.position.set(col, 0, -r);
+  player.mesh.rotation.set(0, 0, 0);
+  player.mesh.scale.set(1, 1, 1);
+  const gu = player.goat.userData;
+  gu.legs.forEach((l) => { l.rotation.x = 0; });
+  gu.ears?.forEach((e2) => { e2.rotation.x = 0; });
+  if (gu.head) gu.head.rotation.set(0, 0, 0);
+  minRow = Math.min(minRow, r - 2);
+  idleTimer = 0; eagleWarned = false;
+  eagleShadow.visible = false;
+  ui.eagleWarn.classList.add('hidden');
+  timeScale = 1;
+  state = 'playing';
+}
+
 function revive() {
   if (reviveUsed || state !== 'dead') return;
   sdkRewarded(() => {
     reviveUsed = true;
-    ui.over.classList.add('hidden');
-    postfx.darken = 0;
-    deathAnim = null;
-    if (eagle) { scene.remove(eagle.g); eagle = null; }
-    // respawn on the nearest grass row at a free column, brief invulnerability
-    let r = player.row;
-    for (let k = 0; k < 6; k++) {
-      const row = rows.get(player.row - k);
-      if (row && row.type === 'grass') { r = player.row - k; break; }
-    }
-    let col = Math.max(-COLS, Math.min(COLS, Math.round(player.x) || 0));
-    const row = rows.get(r);
-    if (row?.trees.has(col)) {
-      for (let c = 1; c <= COLS * 2; c++) {
-        if (!row.trees.has(col + c) && col + c <= COLS) { col = col + c; break; }
-        if (!row.trees.has(col - c) && col - c >= -COLS) { col = col - c; break; }
-      }
-    }
-    player.row = r; player.col = col; player.x = col;
-    player.onLog = null; player.hopping = false; player.buffer = [];
-    player.alive = true; player.invulnT = 2.5;
-    player.mesh.position.set(col, 0, -r);
-    player.mesh.rotation.set(0, 0, 0);
-    player.mesh.scale.set(1, 1, 1);
-    const gu = player.goat.userData;
-    gu.legs.forEach((l) => { l.rotation.x = 0; });
-    gu.ears?.forEach((e2) => { e2.rotation.x = 0; });
-    if (gu.head) gu.head.rotation.set(0, 0, 0);
-    minRow = Math.min(minRow, r - 2);
-    idleTimer = 0; eagleWarned = false;
-    eagleShadow.visible = false;
-    timeScale = 1;
-    state = 'playing';
+    respawnPlayer(2.5);
     sdkGameplayStart();
     snd.record();
-    celebrate('REVIVED!', 'milestone');
-  }, () => toast('Ad unavailable — try again later.'));
+    celebrate(t('c_revived'), 'milestone');
+  }, () => toast(t('t_ad_fail')));
 }
 ui.share.addEventListener('click', (e) => { e.stopPropagation(); shareScore(); });
 
 let touchStart = null;
 window.addEventListener('touchstart', (e) => {
   audio();
-  if (e.target.closest?.('#skin-row') || e.target.closest?.('#restart-btn') || e.target.closest?.('#share-btn') ||
+  if (e.target.closest?.('#skin-shop') || e.target.closest?.('#restart-btn') || e.target.closest?.('#share-btn') ||
       e.target.closest?.('#mode-row') || e.target.closest?.('#mute-btn')) return;
   if (state === 'title') { startGame(); return; }
   touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: performance.now() };
@@ -1212,19 +1577,31 @@ function nearMiss(pos, kind = 'car') {
   if (kind === 'car') playSfx('car_horn');
   shake.add(0.18);
   postfx.aberration = Math.max(postfx.aberration, 0.4);
-  floats.show(pos, 'CLOSE CALL!', 'thrill');
+  floats.show(pos, t('c_close'), 'thrill');
 }
 
 function updateVehicles(dt) {
   for (const [, row] of rows) {
     if (row.type === 'road') {
+      const nearPlayer = state === 'playing' && Math.abs(row.r - player.row) <= 2;
       for (const v of row.vehicles) {
         v.x += row.dir * row.speed * dt;
-        if (v.x > LANE_W / 2 + 2) v.x = -LANE_W / 2 - 2;
-        if (v.x < -LANE_W / 2 - 2) v.x = LANE_W / 2 + 2;
+        if (v.x > LANE_W / 2 + 2) { v.x = -LANE_W / 2 - 2; v.passed = false; }
+        if (v.x < -LANE_W / 2 - 2) { v.x = LANE_W / 2 + 2; v.passed = false; }
         v.mesh.position.x = v.x;
         // suspension wobble
         v.mesh.position.y = Math.abs(Math.sin(worldT * row.speed * 2.4 + v.phase)) * 0.015;
+        // engine pass-by: every car sweeping past the goat is heard, closer = louder
+        if (nearPlayer) {
+          const dx = Math.abs(v.x - player.x);
+          if (!v.passed && dx < 2.2) {
+            v.passed = true;
+            const prox = 1 - Math.abs(row.r - player.row) / 3;   // same row loudest
+            playSfx('car_pass', 0.4 + prox * 0.6);
+          } else if (v.passed && dx > 5) {
+            v.passed = false;
+          }
+        }
       }
     } else if (row.type === 'river') {
       for (const l of row.logs) {
@@ -1244,7 +1621,11 @@ function updateVehicles(dt) {
       tr.t -= dt;
       if (tr.phase === 'idle' && tr.t <= 0) {
         tr.phase = 'warn'; tr.t = 1.3;
-        if (Math.abs(row.r - player.row) < 8) { snd.warn(); playSfx('train_horn'); }
+        // horn only for trains the camera can show, volume drops with distance
+        if (rowAudible(row.r)) {
+          const v = rowFalloff(row.r, 10);
+          if (v > 0.05) { snd.warn(); playSfx('train_horn', 0.35 + v * 0.65); }
+        }
       } else if (tr.phase === 'warn') {
         const blink = Math.floor(tr.t * 6) % 2 === 0;
         tr.signal.userData.light.material.emissive.setHex(blink ? 0xff2020 : 0x000000);
@@ -1254,15 +1635,24 @@ function updateVehicles(dt) {
           tr.nm = false;
           tr.x = row.dir > 0 ? -LANE_W / 2 - tr.mesh.userData.totalLen : LANE_W / 2 + tr.mesh.userData.totalLen;
           tr.mesh.position.x = tr.x;      // sync now: no 1-frame flash at old position
-          if (Math.abs(row.r - player.row) < 8) playSfx('train_rumble');
+          if (rowAudible(row.r) && rowFalloff(row.r, 10) > 0.05) {
+            tr.rumble = playSfx('train_rumble', rowFalloff(row.r, 10));
+            if (tr.rumble) tr.rumble.loop = true;
+          }
         }
       } else if (tr.phase === 'run') {
         tr.x += row.dir * tr.speed * dt;
         tr.mesh.position.x = tr.x;
+        // rumble tracks the train: fades with distance, dies with the train
+        if (tr.rumble) {
+          const v = rowAudible(row.r) ? rowFalloff(row.r, 10) : 0;
+          tr.rumble.volume = Math.min(1, SFX_MASTER * SFX_FILES.train_rumble[1] * v);
+        }
         const off = tr.mesh.userData.totalLen + LANE_W / 2 + 4;
         if ((row.dir > 0 && tr.x > off) || (row.dir < 0 && tr.x < -off)) {
           tr.phase = 'idle'; tr.t = rand(3, 7 - (tr.diff || 0) * 3 - (tr.late || 0) * 1.5); tr.mesh.visible = false;
           tr.signal.userData.light.material.emissive.setHex(0x000000);
+          stopRumble(tr);
         }
       }
     }
@@ -1280,35 +1670,51 @@ function updateVehicles(dt) {
 
 function checkCollisions() {
   if (!player.alive) return;
-  const row = rows.get(player.row);
-  if (!row) return;
+  // physical position of the goat right now (mid-hop it is between two rows)
   const px = player.hopping
     ? player.hopFrom.x + (player.hopTo.x - player.hopFrom.x) * player.hopT
     : player.x;
-  const hopHigh = player.hopping && Math.sin(Math.PI * player.hopT) > 0.45;
+  const pz = player.hopping
+    ? player.hopFrom.z + (player.hopTo.z - player.hopFrom.z) * player.hopT
+    : -player.row;
+  // cars can be cleared only at the very top of the arc; trains are far too
+  // tall to ever hop over
+  const arc = player.hopping ? Math.sin(Math.PI * player.hopT) : 0;
+  const overCars = arc > 0.8;
 
-  if (row.type === 'road') {
-    for (const v of row.vehicles) {
-      const dist = Math.abs(v.x - px);
-      if (!hopHigh && dist < v.hit + 0.26) { die('crash'); return; }
-      // near-miss: the car whooshes right past the goat
-      if (dist < v.halfLen + 0.95) v.nm = true;
-      else if (v.nm && dist > v.halfLen + 1.6) {
-        v.nm = false;
-        if (state === 'playing') nearMiss(new THREE.Vector3(px, 1.0, -row.r));
+  // every row the goat's body overlaps (at most two while mid-hop)
+  const rLo = Math.floor(-pz + 0.45), rHi = Math.ceil(-pz - 0.45);
+  for (let ri = Math.min(rLo, rHi); ri <= Math.max(rLo, rHi); ri++) {
+    const row = rows.get(ri);
+    if (!row) continue;
+
+    if (row.type === 'road') {
+      for (const v of row.vehicles) {
+        const dist = Math.abs(v.x - px);
+        if (!overCars && dist < v.hit + 0.26) { die('crash'); return; }
+        // near-miss: the car whooshes right past the goat (only on the main row)
+        if (ri === Math.round(-pz)) {
+          if (dist < v.halfLen + 0.95) v.nm = true;
+          else if (v.nm && dist > v.halfLen + 1.6) {
+            v.nm = false;
+            if (state === 'playing') nearMiss(new THREE.Vector3(px, 1.0, -row.r));
+          }
+        }
       }
     }
-  }
-  if (row.type === 'rail' && row.train?.phase === 'run') {
-    const tr = row.train;
-    const head = tr.x, tail = tr.x - Math.sign(row.dir) * tr.mesh.userData.totalLen;
-    const lo = Math.min(head, tail) - 0.95, hi = Math.max(head, tail) + 0.95;
-    if (!hopHigh && px > lo && px < hi) { die('train'); return; }
-    const distEdge = Math.min(Math.abs(px - lo), Math.abs(px - hi));
-    if (px > lo - 1.3 && px < hi + 1.3 && distEdge < 1.3) tr.nm = true;
-    else if (tr.nm && (px < lo - 2 || px > hi + 2 || tr.phase !== 'run')) {
-      tr.nm = false;
-      if (state === 'playing') nearMiss(new THREE.Vector3(px, 1.0, -row.r), 'train');
+    if (row.type === 'rail' && row.train?.phase === 'run') {
+      const tr = row.train;
+      const head = tr.x, tail = tr.x - Math.sign(row.dir) * tr.mesh.userData.totalLen;
+      const lo = Math.min(head, tail) - 0.95, hi = Math.max(head, tail) + 0.95;
+      if (px > lo && px < hi) { die('train'); return; }   // no hop-over: a train is a wall
+      if (ri === Math.round(-pz)) {
+        const distEdge = Math.min(Math.abs(px - lo), Math.abs(px - hi));
+        if (px > lo - 1.3 && px < hi + 1.3 && distEdge < 1.3) tr.nm = true;
+        else if (tr.nm && (px < lo - 2 || px > hi + 2 || tr.phase !== 'run')) {
+          tr.nm = false;
+          if (state === 'playing') nearMiss(new THREE.Vector3(px, 1.0, -row.r), 'train');
+        }
+      }
     }
   }
 }
@@ -1317,7 +1723,8 @@ function updatePlayer(dt) {
   const goat = player.goat.userData;
   player.animT += dt;
   if (player.hopping) {
-    const hopDur = (player.hopBig ? HOP_TIME * 1.6 : HOP_TIME) * (player.speedT > 0 ? 0.55 : 1);
+    const hopDur = (player.hopBig ? HOP_TIME * 1.6 : HOP_TIME) * (player.speedT > 0 ? 0.55 : 1)
+      * (currentSkin === 'horse' ? 0.8 : 1);   // Horse perk: 20% faster hops
     player.hopT = Math.min(1, player.hopT + dt / hopDur);
     const t = player.hopT;
     const x = player.hopFrom.x + (player.hopTo.x - player.hopFrom.x) * t;
@@ -1357,7 +1764,7 @@ function updatePlayer(dt) {
       player.mesh.scale.set(1, 1, 1);
     }
     // idle life: head bob, tail wag, blink
-    if (goat.head) goat.head.position.y = 0.72 + Math.sin(player.animT * 2.2) * 0.015;
+    if (goat.head) goat.head.position.y = (goat.headBaseY || 0.72) + Math.sin(player.animT * 2.2) * 0.015;
     if (goat.tail) goat.tail.rotation.x = 0.6 + Math.sin(player.animT * 6) * 0.25;
     player.blinkT -= dt;
     if (player.blinkT <= 0) {
@@ -1376,7 +1783,7 @@ function updatePowers(dt) {
     if (player.ramT >= 45) {
       player.ramT = 0;
       player.shield = true;
-      celebrate('RAM SHIELD!', 'gold');
+      celebrate(t('c_ram_shield'), 'gold');
       snd.power('shield');
       updatePowerHud();
     }
@@ -1447,15 +1854,16 @@ function updateEagle(dt) {
     return;
   }
   idleTimer += dt;
-  const warnSlow = idleTimer > 4.0;
+  const calm = currentSkin === 'deer' ? 2 : 0;   // Deer perk: the eagle waits +2s
+  const warnSlow = idleTimer > 4.0 + calm;
   const warnBehind = player.row < minRow - 2.5;
-  const tooSlow = idleTimer > 5.5;
+  const tooSlow = idleTimer > 5.5 + calm;
   const behind = player.row < minRow - 3.5;
   // pre-warning: banner + screech + growing shadow, escape still possible
   if ((warnSlow || warnBehind) && !eagle) {
     if (!eagleWarned) { eagleWarned = true; snd.eagle(); scene.add(eagleShadow); }
     ui.eagleWarn.classList.remove('hidden');
-    const g = Math.min(1, (idleTimer - 4.0) / 1.5);
+    const g = Math.min(1, (idleTimer - (4.0 + calm)) / 1.5);
     const grow = Math.max(g, warnBehind ? 0.6 : 0);
     eagleShadow.visible = true;
     eagleShadow.scale.setScalar(0.4 + grow * 1.2);
@@ -1517,7 +1925,11 @@ function updateCamera(dt) {
 }
 
 function tick() {
-  const rawDt = Math.min(clock.getDelta(), 0.05);
+  frame(Math.min(clock.getDelta(), 0.05));
+  requestAnimationFrame(tick);
+}
+
+function frame(rawDt) {
   if (bleatCd > 0) bleatCd -= rawDt;
   // slow-mo eases back to real time
   if (timeScale < 1) timeScale = Math.min(1, timeScale + rawDt * 1.1);
@@ -1539,7 +1951,6 @@ function tick() {
   updateDayCycle(rawDt);
   updateCamera(rawDt);
   postfx.render(scene, camera, rawDt);
-  requestAnimationFrame(tick);
 }
 
 // debug/testing hook (harmless in production)
@@ -1555,15 +1966,18 @@ window.__dbg = {
   setMode,
   revive,
   tryHop,
+  step: (dt = 1 / 60) => frame(dt),   // manual tick for headless/automated tests
 };
 
-// Boot: splash (min 2s) + preload GLB library, then title with backdrop
+// Boot: branded splash + preload GLB library, then title with backdrop
 const bootT = performance.now();
+sdkLoadingStart();
 loadLibrary().then(() => {
+  sdkLoadingStop();
   resetWorld();
-  renderSkinShop();
+  renderShop();
   document.getElementById('loading-text')?.classList.add('hidden');
-  const wait = Math.max(0, 2000 - (performance.now() - bootT));
+  const wait = Math.max(0, 1400 - (performance.now() - bootT));
   setTimeout(() => {
     document.getElementById('splash-screen').classList.add('fade');
     ui.title.classList.remove('hidden');

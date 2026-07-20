@@ -5,16 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Goat Crosser 🐐</title>
 <link rel="stylesheet" href="css/style.css">
-<script>
-window.addEventListener('error', (e) => {
-  const m = encodeURIComponent(`${e.message} @ ${e.filename}:${e.lineno}`.slice(0, 400));
-  fetch(`/__err?m=${m}`).catch(() => {});
-});
-window.addEventListener('unhandledrejection', (e) => {
-  const m = encodeURIComponent(String(e.reason && e.reason.stack || e.reason).slice(0, 400));
-  fetch(`/__rej?m=${m}`).catch(() => {});
-});
-</script>
 <script src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.min.js" } }
@@ -27,8 +17,9 @@ window.addEventListener('unhandledrejection', (e) => {
 
   <div id="splash-screen">
     <div class="splash-inner">
-      <div class="splash-logo">▶</div>
-      <div class="splash-text">Presented by <strong>CrazyGames</strong></div>
+      <img class="splash-goat" src="assets/icons/bianca.png" alt="Goat Crosser">
+      <div class="splash-title">GOAT CROSSER</div>
+      <div class="splash-text">Hop. Dodge. Survive.</div>
     </div>
   </div>
 
@@ -56,6 +47,11 @@ window.addEventListener('unhandledrejection', (e) => {
     </div>
     <div id="skin-shop">
       <div id="title-coins">🪙 0</div>
+      <div id="shop-tabs">
+        <button id="tab-animals" class="shop-tab selected">🐐 ANIMALS</button>
+        <button id="tab-gear" class="shop-tab">🎩 GEAR</button>
+        <button id="tab-worlds" class="shop-tab">🌍 WORLDS</button>
+      </div>
       <div id="skin-row"></div>
     </div>
     <p class="blink">PRESS ANY KEY OR TAP TO START</p>

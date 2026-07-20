@@ -185,3 +185,36 @@ Esposto in produzione (innocuo) per test automatizzati Playwright: `rows, player
   - Alpaca 🪙10000 — 1.2× monete raccolte (accumulatore frazionario `coinCarry`).
   - Lo shop mostra il perk (`.skin-perk` in css).
 - **CrazyGames SDK v3**: script `https://sdk.crazygames.com/crazygames-sdk-v3.js` in index.html. Revive rewarded invariato (respawn su grass più vicina, 2.5s invuln, fallback locale). Interstitial `requestAd("midgame")` solo ogni 3 morti cumulative (`deathsSinceAd`) al restart dal menu, mai in gameplay.
+
+## Update 2026-07-20 — Audio sync, collisioni, specie, biomi
+
+- **Audio posizionale**: `playSfx(name, vol)` accetta moltiplicatore volume; `rowAudible(r)` (finestra camera −5..+14 righe) e `rowFalloff(r, range)` (attenuazione per distanza dal player). Treno: horn/rumble SOLO se la riga è visibile, volume per distanza; rumble è in loop agganciato al treno (`tr.rumble`), si spegne a fine corsa e in `recycleRow` (`stopRumble`). Prima si sentivano treni fantasma fino a 8 righe fuori schermo.
+- **Auto udibili**: `car_pass.mp3` ora wired — ogni veicolo entro 2 righe dal player che gli passa vicino (dx<2.2) suona con volume per prossimità; flag `v.passed` resettato al wrap o dx>5.
+- **Suono collisione**: nuovo `impact_thud.mp3` (ElevenLabs) su morte crash/train e su assorbimento scudo, più `goat_bleat_hurt.mp3` (belato di dolore) su crash/train/eagle.
+- **FIX BUG collisioni mid-hop**: `checkCollisions` ora calcola la riga dalla posizione FISICA interpolata (`Math.round(-pz)`), non da `player.row` (che si aggiorna solo all'atterraggio) — prima nella seconda metà del salto la capra era sopra la riga di destinazione ma invulnerabile alle sue auto. Finestra salto-sicuro ristretta: `sin(π·hopT) > 0.62` (era 0.45 = 70% dell'arco invulnerabile).
+- **Scudo vs aquila**: lo scudo assorbe anche la presa dell'aquila (aquila scacciata, idleTimer azzerato, 1.5s invuln, slack su minRow). Testato: salva a ~6s di stallo, poi senza scudo l'aquila uccide.
+- **Garanzia tronchi**: dopo lo spawn, passate di riempimento con `MAX_GAP = 4.2` unità su tutti i gap (incluso wraparound, beltLen = LANE_W+4) — prima i gap arrivavano a ~17 unità (attesa > timer aquila). Verificato max 4.13 su tutti i fiumi.
+- **Specie differenziate** (`makeGoat` shape params): Ram = corna a spirale (TorusGeometry), corpo 1.22×, lana a bozzi (`woolly`), zampe tozze; Alpaca = collo reale (cilindro, `neck: 0.55`), zampe lunghe 1.35× (`lift` alza tutto il corpo), orecchie a banana dritte (`earUp`), ciuffo (`topknot`), niente corna né barba. `headBaseY` in userData per l'idle bob (prima hardcoded 0.72).
+- **Versi per specie** (SPACE): capre = goat_bleat_happy "BAAA!", Ram = `ram_bleat.mp3` "BRAAA!", Alpaca = `alpaca_hum.mp3` "MHMM~" (mappa `VOICES` in main.js).
+- **Hop**: `goat_hop.mp3` rigenerato come thump morbido senza belato — il belato c'è solo con SPACE.
+- **Crazy Goat perk**: 🎲 power-up casuale (shield/magnet/speed) a inizio run, toast "CRAZY START".
+- **Biomi**: nomi inglesi con emoji annunciati al passaggio (celebrate + suono milestone, `lastBiomeIdx`); texture terreno per stile (`grassTexture(color, style)`): meadow/leaves(foglie)/sand(dune+sassi)/snow(scintillii)/alpine(pietre)/forest(muschio+funghi); acqua colorata per bioma (turchese costa, ghiaccio inverno, scuro dark forest) con dispose della texture pooled.
+- **Skin inglesi**: Snowy/Midnight/Cocoa/Goldie/Zombie/Ram/Alpaca/Crazy Goat (id invariati per localStorage).
+- **Icone shop**: `assets/icons/{id}.png` (gpt-image-1, 256px, sfondo trasparente), card `.skin-btn` a dimensione fissa 104×138 (prima Ram/Alpaca erano più grandi per il testo perk), fallback swatch su onerror.
+- **`__dbg.step(dt)`**: tick manuale per test headless (il loop è splittato in `tick()` → `frame(rawDt)`).
+
+## Update 2026-07-20 (bis) — Collisioni v2, vita extra, economia sblocchi, accessori, mondi
+
+- **Collisioni v2** (`checkCollisions`): controlla TUTTE le righe che il corpo tocca (`floor(-pz+0.45)..ceil(-pz-0.45)`, max 2 a metà salto). Treno = muro: MAI scavalcabile in salto (prima l'esenzione hopHigh valeva anche per i treni → "ci sbatto e non muoio"). Auto scavalcabili solo all'apice (`sin(π·hopT) > 0.8`, prima 0.62). Testato: catena di salti veloci contro treno in corsa = morte; auto ferma sulla cella d'atterraggio = morte.
+- **Vita extra ❤️**: nuovo power-up `heart` (18% dei roll power-up), max 1 accumulabile; se già posseduta il pickup dà +10 monete. Alla morte (qualsiasi causa) consuma la vita e fa `respawnPlayer()` (riga grass più vicina, 2.5s invuln) — helper estratto dal revive. ❤️ nell'HUD power.
+- **Economia sblocchi** (SKINS in models.js):
+  - Snowy gratis; Midnight/Cocoa/Goldie/Zombie = `adUnlock` (rewarded ad); Piggy 🐷 = animale extra via ad;
+  - Ram 🪙5000, Bull 🪙8000 (💥 sfonda alberi/rocce in `tryHop`), Alpaca 🪙10000, Horse 🪙12000 (🐎 salti 20% più rapidi in `hopDur`);
+  - Deer = sblocco progressi (`bestUnlock: 150`, auto-grant quando best ≥ 150; 🦅 aquila +2s in `updateEagle`);
+  - Crazy Goat resta cgOnly. Versi nuovi: pig_oink, bull_snort, horse_neigh, deer_squeak (mappa VOICES).
+- **Negozio a 3 tab** (`renderShop`): 🐐 ANIMALS / 🎩 GEAR / 🌍 WORLDS. GEAR = 9 accessori cosmetici (`ACCESSORIES` in models.js, slot head/neck/back, uno per slot): Bow Tie 150, Party Hat 200, Scarf 300, Cowboy Hat 400, Flower Crown 500, Ranger Vest 600, Gold Chain 900, Hero Cape 1200, Crown 2000 — modelli procedurali, `attachAccessories(goat, equipped)` in makePlayer, persistiti in `capra_acc`/`capra_acc_eq`. Icone emoji nelle card.
+- **WORLDS**: bioma di partenza selezionabile; sblocco 🪙400 O rewarded ad (due mini-bottoni espliciti). Offset `effStartBiome()` su biomeAt/biomeIndexAt/biomeAtmoTarget; **daily forza sempre bioma 0** (determinismo condiviso). Backdrop rigenerato al cambio (`backdropBiome`). Persist: `capra_biomes`, `capra_start_biome`.
+- **Splash rebrand**: via "Presented by CrazyGames" → logo GOAT CROSSER (icona bianca.png che rimbalza + tagline), min 1400ms (era 2000). Gioco non esclusivo CG.
+- **Compliance CrazyGames ads**: `adStarted/adFinished/adError` su midgame e rewarded → mute totale (musica + `playSfx`/`tone`/`noise` gated da `adPlaying`), ripresa musica a fine ad; `loadingStart/loadingStop` attorno al boot; rewarded solo da bottoni espliciti "WATCH AD" (user-initiated); fallback locale senza SDK invariato.
+- **Ottimizzazioni**: `ensureRows` incrementale (`genMaxRow`, prima O(score) Map.has per frame); `dayTarget` zero allocazioni (scratch colors); `updatePowerHud` senza DOM churn; shadow map 1024 su mobile (`isMobileish`); `powerPreference: high-performance`; touch handler esclude tutto `#skin-shop`.
+- **i18n (`js/i18n.js`)**: 8 lingue (en/it/es/fr/de/pt/ru/pl), rilevamento automatico da `navigator.language` (CrazyGames NON passa la lingua via SDK — il browser è la fonte), override test `?lang=xx`, fallback en. `t(key, {params})` con placeholder `{n}`. Statici via `applyStaticI18n()` al boot; runtime (toast/celebrate/gameover/shop/share/biomi/perk/accessori) tutti via `t()`. Nomi animali propri (Snowy ecc.) NON tradotti; onomatopee versi invariate.

@@ -27,40 +27,113 @@ function shade(colorHex, f) {
   return `rgb(${adj(r)},${adj(g)},${adj(b)})`;
 }
 
-// ---------- GRASS: mottled base + blade strokes + tiny flowers ----------
-export function grassTexture(colorHex, withFlowers = true) {
-  const key = `grass_${colorHex}_${withFlowers}`;
+// ---------- GROUND: biome-styled — meadow / leaves / sand / snow / alpine / forest ----------
+export function grassTexture(colorHex, style = 'meadow') {
+  const key = `grass_${colorHex}_${style}`;
   if (cache.has(key)) return cache.get(key);
   const c = canvas(256, 128);
   const x = c.getContext('2d');
   x.fillStyle = hex(colorHex);
   x.fillRect(0, 0, 256, 128);
-  // mottling
+  // mottling (all styles)
+  const mottle = style === 'snow' ? 0.08 : 0.22;
   for (let i = 0; i < 900; i++) {
-    x.fillStyle = shade(colorHex, (Math.random() - 0.52) * 0.22);
+    x.fillStyle = shade(colorHex, (Math.random() - 0.52) * mottle);
     const s = 2 + Math.random() * 5;
     x.fillRect(Math.random() * 256, Math.random() * 128, s, s * 0.6);
   }
-  // grass blades
-  x.lineWidth = 1;
-  for (let i = 0; i < 260; i++) {
-    const gx = Math.random() * 256, gy = Math.random() * 128;
-    const len = 3 + Math.random() * 5;
-    x.strokeStyle = shade(colorHex, Math.random() < 0.5 ? 0.18 : -0.2);
-    x.beginPath();
-    x.moveTo(gx, gy);
-    x.lineTo(gx + (Math.random() - 0.5) * 3, gy - len);
-    x.stroke();
-  }
-  // tiny flowers
-  if (withFlowers) {
-    const fl = ['#ffffff', '#ffe066', '#ff9ecb'];
-    for (let i = 0; i < 14; i++) {
-      x.fillStyle = fl[Math.floor(Math.random() * fl.length)];
-      const fx = Math.random() * 256, fy = Math.random() * 128;
-      x.fillRect(fx, fy, 2.4, 2.4);
-      x.fillStyle = 'rgba(255,200,0,.9)';
-      x.fillRect(fx + 0.7, fy + 0.7, 1, 1);
+  if (style === 'sand') {
+    // wind ripples: long wavy dune lines, no grass blades
+    for (let i = 0; i < 26; i++) {
+      const gy = Math.random() * 128;
+      x.strokeStyle = shade(colorHex, Math.random() < 0.5 ? 0.12 : -0.14);
+      x.lineWidth = 1 + Math.random();
+      x.beginPath();
+      x.moveTo(0, gy);
+      x.bezierCurveTo(85, gy + (Math.random() - 0.5) * 8, 170, gy + (Math.random() - 0.5) * 8, 256, gy + (Math.random() - 0.5) * 5);
+      x.stroke();
+    }
+    // scattered pebbles
+    for (let i = 0; i < 18; i++) {
+      x.fillStyle = shade(colorHex, -0.25);
+      x.beginPath();
+      x.ellipse(Math.random() * 256, Math.random() * 128, 1.5 + Math.random() * 2, 1 + Math.random(), 0, 0, Math.PI * 2);
+      x.fill();
+    }
+  } else if (style === 'snow') {
+    // sparkles + soft blue shadow patches, pristine surface
+    for (let i = 0; i < 20; i++) {
+      x.fillStyle = 'rgba(160,190,230,0.25)';
+      x.beginPath();
+      x.ellipse(Math.random() * 256, Math.random() * 128, 6 + Math.random() * 14, 3 + Math.random() * 6, 0, 0, Math.PI * 2);
+      x.fill();
+    }
+    for (let i = 0; i < 40; i++) {
+      x.fillStyle = `rgba(255,255,255,${0.5 + Math.random() * 0.5})`;
+      x.fillRect(Math.random() * 256, Math.random() * 128, 1.4, 1.4);
+    }
+  } else {
+    // grassy styles keep blades
+    x.lineWidth = 1;
+    for (let i = 0; i < 260; i++) {
+      const gx = Math.random() * 256, gy = Math.random() * 128;
+      const len = 3 + Math.random() * 5;
+      x.strokeStyle = shade(colorHex, Math.random() < 0.5 ? 0.18 : -0.2);
+      x.beginPath();
+      x.moveTo(gx, gy);
+      x.lineTo(gx + (Math.random() - 0.5) * 3, gy - len);
+      x.stroke();
+    }
+    if (style === 'meadow') {
+      // tiny flowers
+      const fl = ['#ffffff', '#ffe066', '#ff9ecb'];
+      for (let i = 0; i < 14; i++) {
+        x.fillStyle = fl[Math.floor(Math.random() * fl.length)];
+        const fx = Math.random() * 256, fy = Math.random() * 128;
+        x.fillRect(fx, fy, 2.4, 2.4);
+        x.fillStyle = 'rgba(255,200,0,.9)';
+        x.fillRect(fx + 0.7, fy + 0.7, 1, 1);
+      }
+    } else if (style === 'leaves') {
+      // fallen leaves in warm tones
+      const cols = ['#c9642f', '#d98a3a', '#a8502a', '#e0a84e'];
+      for (let i = 0; i < 26; i++) {
+        x.fillStyle = cols[Math.floor(Math.random() * cols.length)];
+        x.save();
+        x.translate(Math.random() * 256, Math.random() * 128);
+        x.rotate(Math.random() * Math.PI);
+        x.beginPath();
+        x.ellipse(0, 0, 2.6, 1.5, 0, 0, Math.PI * 2);
+        x.fill();
+        x.restore();
+      }
+    } else if (style === 'alpine') {
+      // small gray stones peeking through thin turf
+      for (let i = 0; i < 16; i++) {
+        x.fillStyle = `rgba(150,150,160,${0.5 + Math.random() * 0.4})`;
+        x.beginPath();
+        x.ellipse(Math.random() * 256, Math.random() * 128, 2 + Math.random() * 3, 1.5 + Math.random() * 2, 0, 0, Math.PI * 2);
+        x.fill();
+      }
+    } else if (style === 'forest') {
+      // moss patches + tiny red mushrooms
+      for (let i = 0; i < 14; i++) {
+        x.fillStyle = 'rgba(40,70,35,0.3)';
+        x.beginPath();
+        x.ellipse(Math.random() * 256, Math.random() * 128, 5 + Math.random() * 9, 3 + Math.random() * 4, 0, 0, Math.PI * 2);
+        x.fill();
+      }
+      for (let i = 0; i < 6; i++) {
+        const mx = Math.random() * 256, my = Math.random() * 128;
+        x.fillStyle = '#e8e0d0';
+        x.fillRect(mx - 0.7, my, 1.4, 2.4);
+        x.fillStyle = '#c0392b';
+        x.beginPath();
+        x.ellipse(mx, my, 2.2, 1.4, 0, Math.PI, 0);
+        x.fill();
+        x.fillStyle = '#fff';
+        x.fillRect(mx - 1, my - 0.8, 0.9, 0.9);
+      }
     }
   }
   const t = toTexture(c, 8, 1);
