@@ -20,7 +20,8 @@ const HOP_HEIGHT = 0.55;
 
 // ---------------- CrazyGames SDK guards ----------------
 const CG = () => window.CrazyGames?.SDK;
-async function sdkInit() { try { await CG()?.init?.(); } catch (_) {} }
+let sdkReady = false;
+async function sdkInit() { try { await CG()?.init?.(); } catch (_) {} sdkReady = true; }
 function sdkGameplayStart() { try { CG()?.game?.gameplayStart?.(); } catch (_) {} }
 function sdkGameplayStop() { try { CG()?.game?.gameplayStop?.(); } catch (_) {} }
 function sdkHappy() { try { CG()?.game?.happytime?.(); } catch (_) {} }
@@ -58,8 +59,25 @@ function sdkRewarded(onDone, onFail) {
   }
   setTimeout(onDone, 400);   // local/dev fallback: grant the reward
 }
-sdkInit();
+const sdkReadyPromise = sdkInit();
 const onCrazyGames = /(^|\.)crazygames\.com$/.test(location.hostname);
+
+// ---------------- Persistence: CrazyGames Data Module (cross-device save) ----------------
+// Same get/set/remove signature as localStorage by design (docs.crazygames.com/sdk/data) —
+// drop-in swap. Guests are proxied to localStorage by the SDK itself, so this only changes
+// behavior for signed-in CrazyGames users (their save syncs across devices). Off-platform,
+// or before init resolves, falls straight through to plain localStorage.
+const store = {
+  get(key) {
+    const d = sdkReady && CG()?.data;
+    try { return d ? d.getItem(key) : localStorage.getItem(key); } catch (_) { return localStorage.getItem(key); }
+  },
+  set(key, value) {
+    const d = sdkReady && CG()?.data;
+    try { if (d) { d.setItem(key, value); return; } } catch (_) {}
+    localStorage.setItem(key, value);
+  },
+};
 
 // ---------------- Audio (tiny synth) ----------------
 let actx = null;
@@ -162,7 +180,7 @@ const snd = {
 
 // ---------------- Background music (ElevenLabs-generated loop) ----------------
 const MUSIC_VOL = 0.22;   // sits well under SFX so pickups/impacts stay readable
-let musicOn = localStorage.getItem('capra_music') !== '0';
+let musicOn = true;   // real value loaded from store in loadPersistedState()
 const bgMusic = new Audio('assets/audio/music/bg.mp3');
 bgMusic.loop = true;
 bgMusic.volume = MUSIC_VOL;
@@ -314,15 +332,16 @@ function updateDayCycle(dt) {
 let rows = new Map();          // rowIndex -> row data
 let player, eagle = null;
 let state = 'loading';         // loading | title | playing | dead
-let score = 0, coins = 0, best = +(localStorage.getItem('capra_best') || 0), newRecord = false;
-let totalCoins = +(localStorage.getItem('capra_coins') || 0);
-let ownedSkins = JSON.parse(localStorage.getItem('capra_owned') || '["bianca"]');
-let currentSkin = localStorage.getItem('capra_skin') || 'bianca';
-let ownedAcc = JSON.parse(localStorage.getItem('capra_acc') || '[]');
-let equippedAcc = JSON.parse(localStorage.getItem('capra_acc_eq') || '{"head":null,"neck":null,"back":null}');
-let ownedBiomes = JSON.parse(localStorage.getItem('capra_biomes') || '[0]');
-let startBiome = +(localStorage.getItem('capra_start_biome') || 0);
-if (!ownedBiomes.includes(startBiome)) startBiome = 0;
+// persisted fields below get their real values from loadPersistedState(), called
+// once the CrazyGames Data Module (or localStorage fallback) is ready to read
+let score = 0, coins = 0, best = 0, newRecord = false;
+let totalCoins = 0;
+let ownedSkins = ['bianca'];
+let currentSkin = 'bianca';
+let ownedAcc = [];
+let equippedAcc = { head: null, neck: null, back: null };
+let ownedBiomes = [0];
+let startBiome = 0;
 let camRow = 0, minRow = 0, idleTimer = 0, eagleWarned = false;
 let mode = 'endless';          // endless | daily
 let runStarted = false;        // first forward hop fired gameplayStart
@@ -343,13 +362,29 @@ eagleShadow.rotation.x = -Math.PI / 2;
 eagleShadow.visible = false;
 
 function saveCoins() {
-  localStorage.setItem('capra_coins', totalCoins);
-  localStorage.setItem('capra_owned', JSON.stringify(ownedSkins));
-  localStorage.setItem('capra_skin', currentSkin);
-  localStorage.setItem('capra_acc', JSON.stringify(ownedAcc));
-  localStorage.setItem('capra_acc_eq', JSON.stringify(equippedAcc));
-  localStorage.setItem('capra_biomes', JSON.stringify(ownedBiomes));
-  localStorage.setItem('capra_start_biome', startBiome);
+  store.set('capra_coins', totalCoins);
+  store.set('capra_owned', JSON.stringify(ownedSkins));
+  store.set('capra_skin', currentSkin);
+  store.set('capra_acc', JSON.stringify(ownedAcc));
+  store.set('capra_acc_eq', JSON.stringify(equippedAcc));
+  store.set('capra_biomes', JSON.stringify(ownedBiomes));
+  store.set('capra_start_biome', startBiome);
+}
+
+// called once, after the Data Module (or its localStorage fallback) is ready to read
+function loadPersistedState() {
+  best = +(store.get('capra_best') || 0);
+  totalCoins = +(store.get('capra_coins') || 0);
+  ownedSkins = JSON.parse(store.get('capra_owned') || '["bianca"]');
+  currentSkin = store.get('capra_skin') || 'bianca';
+  ownedAcc = JSON.parse(store.get('capra_acc') || '[]');
+  equippedAcc = JSON.parse(store.get('capra_acc_eq') || '{"head":null,"neck":null,"back":null}');
+  ownedBiomes = JSON.parse(store.get('capra_biomes') || '[0]');
+  startBiome = +(store.get('capra_start_biome') || 0);
+  if (!ownedBiomes.includes(startBiome)) startBiome = 0;
+  musicOn = store.get('capra_music') !== '0';
+  ui.mute.textContent = musicOn ? '🔊' : '🔇';
+  if (onCrazyGames && !ownedSkins.includes('crazy')) { ownedSkins.push('crazy'); saveCoins(); }
 }
 
 const ui = {
@@ -398,9 +433,8 @@ function applyStaticI18n() {
 applyStaticI18n();
 // CrazyGames badge on the title screen, only when actually hosted there
 if (onCrazyGames) document.getElementById('cg-badge')?.classList.remove('hidden');
-ui.best.textContent = `${t('best')} ${best}`;
-ui.coins.textContent = `🪙 ${totalCoins}`;
-if (onCrazyGames && !ownedSkins.includes('crazy')) { ownedSkins.push('crazy'); saveCoins(); }
+// best/coins HUD text is set in resetWorld() at boot, once loadPersistedState() has
+// actually loaded the save data (Data Module or localStorage fallback)
 
 let toastTimer = null;
 function toast(msg) {
@@ -1358,7 +1392,7 @@ function die(kind) {
   if (mode === 'daily') {
     if (score > dailyBest) {
       dailyBest = score;
-      localStorage.setItem(dailyKey(), dailyBest);
+      store.set(dailyKey(), dailyBest);
       ui.goBest.classList.add('new-record');
       ui.goBest.textContent = t('new_daily_best_n', { n: dailyBest });
     } else {
@@ -1368,7 +1402,7 @@ function die(kind) {
     ui.best.textContent = `${t('daily_hud')} ${dailyLabel()} · ${dailyBest}`;
   } else if (score > best) {
     best = score;
-    localStorage.setItem('capra_best', best);
+    store.set('capra_best', best);
     ui.goBest.classList.add('new-record');
     ui.goBest.textContent = t('new_best_n', { n: best });
     ui.best.textContent = `${t('best')} ${best}`;
@@ -1416,7 +1450,7 @@ function resetWorld() {
   genMaxRow = -1;
   genState = { lastTypes: [], lastPowerRow: 0 };
   genRand = mode === 'daily' ? mulberry32((dailySeed() * 2654435761) >>> 0) : Math.random;
-  dailyBest = +(localStorage.getItem(dailyKey()) || 0);
+  dailyBest = +(store.get(dailyKey()) || 0);
   if (player) scene.remove(player.mesh);
   if (eagle) { scene.remove(eagle.g); eagle = null; }
   if (!backdrop || backdropBiome !== effStartBiome()) buildBackdrop();
@@ -1476,10 +1510,10 @@ ui.modeDaily.addEventListener('click', (e) => { e.stopPropagation(); audio(); se
 ui.mute.addEventListener('click', (e) => {
   e.stopPropagation();
   setMusicOn(!musicOn);
-  localStorage.setItem('capra_music', musicOn ? '1' : '0');
+  store.set('capra_music', musicOn ? '1' : '0');
   ui.mute.textContent = musicOn ? '🔊' : '🔇';
 });
-ui.mute.textContent = musicOn ? '🔊' : '🔇';
+// initial icon set in loadPersistedState(), once musicOn reflects the real saved value
 
 // ---------------- Input ----------------
 const KEYMAP = {
@@ -1971,11 +2005,13 @@ window.__dbg = {
   step: (dt = 1 / 60) => frame(dt),   // manual tick for headless/automated tests
 };
 
-// Boot: branded splash + preload GLB library, then title with backdrop
+// Boot: branded splash + preload GLB library + wait for the SDK (so the Data
+// Module is ready before the first save read), then title with backdrop
 const bootT = performance.now();
 sdkLoadingStart();
-loadLibrary().then(() => {
+Promise.all([sdkReadyPromise, loadLibrary()]).then(() => {
   sdkLoadingStop();
+  loadPersistedState();
   resetWorld();
   renderShop();
   document.getElementById('loading-text')?.classList.add('hidden');
