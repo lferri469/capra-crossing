@@ -1619,25 +1619,36 @@ function revive() {
 }
 ui.share.addEventListener('click', (e) => { e.stopPropagation(); shareScore(); });
 
+// controls/menus where a touch must NOT start a run and must be free to scroll
+const onMenuControl = (el) => !!(el?.closest?.('#skin-shop') || el?.closest?.('#mode-row') ||
+  el?.closest?.('#mute-btn') || el?.closest?.('.go-buttons') || el?.closest?.('#menu-btn'));
+
 let touchStart = null;
+// passive: lets the browser scroll the overlay/shop natively on title & game over
 window.addEventListener('touchstart', (e) => {
   audio();
-  if (e.target.closest?.('#skin-shop') || e.target.closest?.('#restart-btn') || e.target.closest?.('#share-btn') ||
-      e.target.closest?.('#mode-row') || e.target.closest?.('#mute-btn')) return;
-  if (state === 'title') { startGame(); return; }
-  touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: performance.now() };
-}, { passive: false });
+  touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: performance.now(), target: e.target };
+}, { passive: true });
 window.addEventListener('touchend', (e) => {
-  if (state !== 'playing' || !touchStart) return;
-  const dx = e.changedTouches[0].clientX - touchStart.x;
-  const dy = e.changedTouches[0].clientY - touchStart.y;
+  if (!touchStart) return;
+  const c = e.changedTouches[0];
+  const dx = c.clientX - touchStart.x, dy = c.clientY - touchStart.y;
   const adx = Math.abs(dx), ady = Math.abs(dy);
-  if (Math.max(adx, ady) < 18) { tryHop(0, 1); }           // tap = forward
-  else if (adx > ady) tryHop(dx > 0 ? 1 : -1, 0);
-  else tryHop(0, dy < 0 ? 1 : -1);
+  const isTap = Math.max(adx, ady) < 18;
+  const startedOnControl = onMenuControl(touchStart.target);
   touchStart = null;
-}, { passive: false });
-window.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+  if (state === 'title') {
+    // only a genuine tap on empty space starts — a swipe scrolls the menu/shop,
+    // a tap on a shop card / mode button is handled by that element's own click
+    if (isTap && !startedOnControl) startGame();
+  } else if (state === 'playing') {
+    if (isTap) tryHop(0, 1);                          // tap = forward
+    else if (adx > ady) tryHop(dx > 0 ? 1 : -1, 0);
+    else tryHop(0, dy < 0 ? 1 : -1);
+  }
+}, { passive: true });
+// block page scroll ONLY during gameplay; on title/game over the overlay scrolls freely
+window.addEventListener('touchmove', (e) => { if (state === 'playing') e.preventDefault(); }, { passive: false });
 
 // ---------------- Update loop ----------------
 const clock = new THREE.Clock();

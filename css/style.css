@@ -233,6 +233,10 @@ html, body {
   padding: 20px;
   /* short screens: the whole overlay scrolls instead of clipping the shop */
   overflow-y: auto;
+  /* body sets touch-action:none for gameplay; re-enable vertical drag-scroll
+     here so the menu/shop can be scrolled by finger on mobile */
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* auto margins center the content when it fits, allow scrolling when it doesn't */
