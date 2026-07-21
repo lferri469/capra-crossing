@@ -373,6 +373,10 @@ let deathAnim = null;
 let nearMisses = 0;
 let runTime = 0;
 let lastBiomeIdx = 0;
+// lifetime records (persisted)
+let bestTime = 0, runsPlayed = 0, coinsEarned = 0;
+// daily bonus: pending run-start boosts granted by the daily chest
+let pendingStartShield = false, pendingStartLife = false;
 
 // growing dark disc under the goat while the eagle closes in
 const eagleShadow = new THREE.Mesh(
@@ -392,6 +396,12 @@ function saveCoins() {
   store.set('capra_start_biome', startBiome);
 }
 
+function saveStats() {
+  store.set('capra_besttime', Math.round(bestTime));
+  store.set('capra_runs', runsPlayed);
+  store.set('capra_earned', coinsEarned);
+}
+
 // called once, after the Data Module (or its localStorage fallback) is ready to read
 function loadPersistedState() {
   best = +(store.get('capra_best') || 0);
@@ -405,6 +415,9 @@ function loadPersistedState() {
   if (!ownedBiomes.includes(startBiome)) startBiome = 0;
   musicOn = store.get('capra_music') !== '0';
   ui.mute.textContent = musicOn ? '🔊' : '🔇';
+  bestTime = +(store.get('capra_besttime') || 0);
+  runsPlayed = +(store.get('capra_runs') || 0);
+  coinsEarned = +(store.get('capra_earned') || 0);
   if (onCrazyGames && !ownedSkins.includes('crazy')) { ownedSkins.push('crazy'); saveCoins(); }
 }
 
@@ -454,6 +467,10 @@ function applyStaticI18n() {
   set('#tab-animals', `🐐 ${t('tab_animals')}`);
   set('#tab-gear', `🎩 ${t('tab_gear')}`);
   set('#tab-worlds', `🌍 ${t('tab_worlds')}`);
+  set('#tab-records', `🏆 ${t('tab_records')}`);
+  set('#db-title', t('daily_bonus_title'));
+  set('#db-sub', t('daily_bonus_pick'));
+  set('#db-close', t('play_btn'));
 }
 applyStaticI18n();
 // CrazyGames badge on the title screen, only when actually hosted there
@@ -636,17 +653,39 @@ function renderWorlds() {
   });
 }
 
+function fmtTime(s) {
+  const m = Math.floor(s / 60), sec = Math.round(s % 60);
+  return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
+}
+function renderRecords() {
+  const rows = [
+    ['🏁', t('rec_best'), `${best} ${t('rec_rows')}`],
+    ['🗓️', t('rec_daily'), `${dailyBest} ${t('rec_rows')}`],
+    ['⏱️', t('rec_time'), fmtTime(bestTime)],
+    ['🐐', t('rec_runs'), `${runsPlayed}`],
+    ['🪙', t('rec_earned'), `${coinsEarned}`],
+  ];
+  const wrap = document.createElement('div');
+  wrap.className = 'records-panel';
+  wrap.innerHTML = rows.map(([e, label, val]) =>
+    `<div class="rec-row"><span class="rec-ico">${e}</span><span class="rec-label">${label}</span><span class="rec-val">${val}</span></div>`
+  ).join('');
+  ui.skinRow.appendChild(wrap);
+}
+
+const SHOP_TABS = [['tab-animals', 'animals'], ['tab-gear', 'gear'], ['tab-worlds', 'worlds'], ['tab-records', 'records']];
 function renderShop() {
   ui.titleCoins.textContent = `🪙 ${totalCoins}`;
-  for (const [id, tab] of [['tab-animals', 'animals'], ['tab-gear', 'gear'], ['tab-worlds', 'worlds']]) {
+  for (const [id, tab] of SHOP_TABS) {
     document.getElementById(id).classList.toggle('selected', shopTab === tab);
   }
   ui.skinRow.innerHTML = '';
   if (shopTab === 'animals') renderAnimals();
   else if (shopTab === 'gear') renderGear();
-  else renderWorlds();
+  else if (shopTab === 'worlds') renderWorlds();
+  else renderRecords();
 }
-for (const [id, tab] of [['tab-animals', 'animals'], ['tab-gear', 'gear'], ['tab-worlds', 'worlds']]) {
+for (const [id, tab] of SHOP_TABS) {
   document.getElementById(id).addEventListener('click', (e) => {
     e.stopPropagation();
     audio();
@@ -654,6 +693,69 @@ for (const [id, tab] of [['tab-animals', 'animals'], ['tab-gear', 'gear'], ['tab
     renderShop();
   });
 }
+
+// ---------------- Daily bonus chest (pick 1 of 3 bushes, once per calendar day) ----------------
+const dailyBonusKey = () => `capra_dailybonus_${dailySeed()}`;
+const dbScreen = document.getElementById('daily-bonus-screen');
+const dbResult = document.getElementById('db-result');
+const dbClose = document.getElementById('db-close');
+const dbSub = document.getElementById('db-sub');
+let dbPicked = false;
+
+function rollDailyReward() {
+  const r = Math.random();
+  const unownedAcc = ACCESSORIES.filter((a) => !ownedAcc.includes(a.id));
+  const unownedWorld = BIOMES.map((_, i) => i).filter((i) => !ownedBiomes.includes(i));
+  if (r < 0.05 && unownedAcc.length) { const a = pick(unownedAcc); return { type: 'acc', id: a.id, name: t('acc_' + a.id) || a.name }; }
+  if (r < 0.09 && unownedWorld.length) { const i = pick(unownedWorld); return { type: 'world', i, name: t('biome_' + i) }; }
+  if (r < 0.17) return { type: 'life' };
+  if (r < 0.25) return { type: 'shield' };
+  if (r < 0.45) return { type: 'coins', n: 120 };
+  return { type: 'coins', n: 30 + Math.floor(Math.random() * 31) };   // 30-60 (common)
+}
+
+function applyDailyReward(rw) {
+  if (rw.type === 'coins') { totalCoins += rw.n; coinsEarned += rw.n; saveCoins(); ui.coins.textContent = `🪙 ${totalCoins}`; return t('db_coins', { n: rw.n }); }
+  if (rw.type === 'shield') { pendingStartShield = true; return t('db_shield'); }
+  if (rw.type === 'life') { pendingStartLife = true; return t('db_life'); }
+  if (rw.type === 'acc') { if (!ownedAcc.includes(rw.id)) ownedAcc.push(rw.id); saveCoins(); return t('db_acc', { name: rw.name }); }
+  if (rw.type === 'world') { if (!ownedBiomes.includes(rw.i)) ownedBiomes.push(rw.i); saveCoins(); return t('db_world', { name: rw.name }); }
+  return '';
+}
+
+function showDailyBonus() {
+  if (store.get(dailyBonusKey())) return false;   // already claimed today
+  dbPicked = false;
+  dbResult.classList.add('hidden');
+  dbClose.classList.add('hidden');
+  dbSub.classList.remove('hidden');
+  document.querySelectorAll('.db-bush').forEach((b) => { b.textContent = '🌳'; b.disabled = false; b.classList.remove('opened'); });
+  dbScreen.classList.remove('hidden');
+  return true;
+}
+document.querySelectorAll('.db-bush').forEach((bush) => {
+  bush.addEventListener('click', (e) => {
+    e.stopPropagation();
+    audio();
+    if (dbPicked) return;
+    dbPicked = true;
+    store.set(dailyBonusKey(), '1');                 // one claim per day
+    const rw = rollDailyReward();
+    const msg = applyDailyReward(rw);
+    bush.textContent = '🎁';
+    bush.classList.add('opened');
+    document.querySelectorAll('.db-bush').forEach((b) => { b.disabled = true; });
+    dbSub.classList.add('hidden');
+    dbResult.textContent = msg;
+    dbResult.classList.remove('hidden');
+    dbClose.classList.remove('hidden');
+    snd.record();
+    particles && postfx && (postfx.flash = 0.25);
+    renderShop();
+    refreshTitlePreview();
+  });
+});
+dbClose.addEventListener('click', (e) => { e.stopPropagation(); audio(); dbScreen.classList.add('hidden'); });
 
 // ---------------- Lane generation ----------------
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -1074,10 +1176,13 @@ function buildFloor() {
   floor.renderOrder = -1;            // draw before lanes
   scene.add(floor);
 }
+let floorBiome = -1;
 function updateFloor() {
   if (!floor) return;
   floor.position.z = -camRow;        // follow the camera so gaps are always covered
-  floor.material.color.copy(groundColorAt(Math.max(score, 0)));
+  // recolor only when the biome actually changes, not every frame
+  const bi = biomeIndexAt(Math.max(score, 0));
+  if (bi !== floorBiome) { floorBiome = bi; floor.material.color.copy(groundColorAt(Math.max(score, 0))); }
 }
 
 // ---------------- Cloud shadows (soft dark patches drifting over the ground) ----------------
@@ -1252,7 +1357,7 @@ function collectCoin(row, entry) {
   const gain = coinGain();
   floats.show(wp.clone().setY(0.9), `+${gain}`, 'gold');
   row.coins.splice(row.coins.indexOf(entry), 1);
-  coins += gain; totalCoins += gain; saveCoins();
+  coins += gain; totalCoins += gain; coinsEarned += gain; saveCoins();
   ui.coins.textContent = `🪙 ${totalCoins}`;
   snd.coin();
 }
@@ -1301,7 +1406,11 @@ function landPlayer() {
     }
     if (score > 0 && score % 25 === 0) {
       snd.milestone();
-      celebrate(`${score}!`, 'milestone');
+      // distance reward: coins for every 25 rows reached, so far runs actually pay
+      const bonus = 10;
+      coins += bonus; totalCoins += bonus; coinsEarned += bonus; saveCoins();
+      ui.coins.textContent = `🪙 ${totalCoins}`;
+      celebrate(`${score}!  +${bonus}🪙`, 'milestone');
       particles.confetti(player.mesh.position.clone().add(new THREE.Vector3(0, 0.8, 0)));
       if (score % 50 === 0) sdkHappy();
     }
@@ -1322,7 +1431,7 @@ function landPlayer() {
     if (kind === 'speed') { player.speedT = 6; celebrate(t('c_speed'), 'gold'); toast(t('t_speed')); }
     if (kind === 'heart') {
       if (player.lives < 1) { player.lives = 1; celebrate(t('c_life'), 'record'); toast(t('t_heart')); }
-      else { const bonus = 10; coins += bonus; totalCoins += bonus; saveCoins(); ui.coins.textContent = `🪙 ${totalCoins}`; celebrate(`+${bonus}`, 'gold'); }
+      else { const bonus = 10; coins += bonus; totalCoins += bonus; coinsEarned += bonus; saveCoins(); ui.coins.textContent = `🪙 ${totalCoins}`; celebrate(`+${bonus}`, 'gold'); }
     }
     updatePowerHud();
   }
@@ -1436,6 +1545,7 @@ function die(kind) {
   player.alive = false;
   deathsSinceAd++;
   state = 'dead';
+  if (runTime > bestTime) { bestTime = runTime; saveStats(); }   // longest survival record
   ui.eagleWarn.classList.add('hidden');
   eagleShadow.visible = false;
   timeScale = 0.25;                                // slow-mo drama
@@ -1506,6 +1616,7 @@ function resetWorld() {
   for (const [, row] of rows) recycleRow(row);
   rows.clear();
   genMaxRow = -1;
+  floorBiome = -1;                   // force floor recolor for the new run's start biome
   genState = { lastTypes: [], lastPowerRow: 0 };
   genRand = mode === 'daily' ? mulberry32((dailySeed() * 2654435761) >>> 0) : Math.random;
   dailyBest = +(store.get(dailyKey()) || 0);
@@ -1535,6 +1646,7 @@ function startGame() {
   ui.over.classList.add('hidden');
   resetWorld();
   state = 'playing';
+  runsPlayed++; saveStats();
   startMusic();
   // Crazy Goat perk: every run kicks off with a random power-up
   if (currentSkin === 'crazy') {
@@ -1546,6 +1658,9 @@ function startGame() {
     snd.power(kind);
     toast(t('t_crazy_start', { kind: kind.toUpperCase() }));
   }
+  // daily-chest boosts granted for this run
+  if (pendingStartShield) { pendingStartShield = false; player.shield = true; updatePowerHud(); }
+  if (pendingStartLife) { pendingStartLife = false; player.lives = 1; updatePowerHud(); }
 }
 
 // interstitial only every 3 cumulative deaths, always outside active gameplay
@@ -2100,6 +2215,7 @@ Promise.all([sdkReadyPromise, loadLibrary()]).then(() => {
     document.getElementById('splash-screen').classList.add('fade');
     ui.title.classList.remove('hidden');
     state = 'title';
+    showDailyBonus();          // offer today's chest over the title, if unclaimed
   }, wait);
 });
 tick();

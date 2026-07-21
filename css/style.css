@@ -555,6 +555,82 @@ html, body {
 
 .mini-btn:hover { background: rgba(255, 224, 102, 0.4); }
 
+/* ---- records panel ---- */
+.records-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(90vw, 460px);
+  padding: 4px;
+}
+.rec-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(255, 255, 255, .1);
+  border-radius: 12px;
+  padding: 12px 18px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+}
+.rec-ico { font-size: 22px; }
+.rec-label { color: #cdd7ff; }
+.rec-val { margin-left: auto; color: #ffe066; font-weight: 900; }
+
+/* ---- daily bonus chest ---- */
+#daily-bonus-screen {
+  z-index: 20;                       /* above the title overlay */
+  background: rgba(14, 15, 26, 0.92); /* opaque so the menu behind doesn't bleed */
+  backdrop-filter: blur(6px);
+  justify-content: center;
+  gap: 22px;
+}
+/* neutralize the title's auto-margin centering trick here — real centering */
+#daily-bonus-screen > :first-child { margin-top: 0; }
+#daily-bonus-screen > :last-child { margin-bottom: 0; }
+#db-bushes {
+  display: flex;
+  gap: 22px;
+  justify-content: center;
+  margin: 8px 0;
+}
+.db-bush {
+  font-size: 68px;
+  line-height: 1;
+  padding: 14px 18px;
+  border: 0;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, .1);
+  cursor: pointer;
+  transition: transform .1s, background .1s;
+}
+.db-bush:hover:not(:disabled) { transform: scale(1.08) translateY(-4px); background: rgba(143, 206, 90, .25); }
+.db-bush:disabled { cursor: default; opacity: .55; }
+.db-bush.opened { opacity: 1; animation: pop .4s ease; background: rgba(255, 224, 102, .25); }
+.db-result {
+  font-size: 22px;
+  font-weight: 900;
+  color: #7bed9f;
+  text-shadow: 0 2px 0 rgba(0,0,0,.4);
+  min-height: 28px;
+}
+.db-result.hidden { display: none; }
+#db-close.hidden { display: none; }
+#db-close {
+  font-family: inherit;
+  font-size: 22px;
+  font-weight: 900;
+  padding: 13px 44px;
+  border: 0;
+  border-radius: 14px;
+  cursor: pointer;
+  color: #1e3a12;
+  background: #8fce5a;
+  box-shadow: 0 5px 0 #5a9e35;
+}
+#db-close:active { transform: translateY(4px); box-shadow: 0 1px 0 #5a9e35; }
+
 .skin-btn {
   font-family: inherit;
   display: flex;

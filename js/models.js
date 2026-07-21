@@ -110,10 +110,10 @@ export const SKINS = [
   // ad-unlock animal
   { id: 'pig', name: 'Piggy', adUnlock: true, body: 0xf5a8b8, snout: 0xf08a9e, horn: 0xf08a9e, perk: '🐽 just adorable', shape: { snoutBig: 1, curlyTail: 1, hornScale: 0, earDroop: 0.35, bodyScale: 1.08, noBeard: 1 } },
   // ability skins: perk text shown in the shop, logic lives in main.js
-  { id: 'montone', name: 'Ram', cost: 5000, body: 0xb8ada0, snout: 0x8f8478, horn: 0x8a6f52, perk: '🛡️ auto-shield every 45s', shape: { curlHorns: 1, bodyScale: 1.22, woolly: 1, earLen: 0.8, legThick: 1.25 } },
-  { id: 'bull', name: 'Bull', cost: 8000, body: 0x5a4632, snout: 0x77604a, horn: 0xf0e6d8, perk: '💥 smashes trees & rocks', shape: { bullHorns: 1, noseRing: 1, bodyScale: 1.28, legThick: 1.35, earLen: 0.8, noBeard: 1 } },
-  { id: 'alpaca', name: 'Alpaca', cost: 10000, body: 0xe8d8c2, snout: 0xcbb49b, horn: 0xd9cfc0, perk: '🪙 1.2× coins', shape: { neck: 0.55, earLen: 1.7, earUp: 1, hornScale: 0, topknot: 1, legLen: 1.35, noBeard: 1 } },
-  { id: 'horse', name: 'Horse', cost: 12000, body: 0xa06a3a, snout: 0x8a5a30, horn: 0xa06a3a, perk: '🐎 20% faster hops', shape: { longFace: 1, mane: 1, legLen: 1.3, hornScale: 0, earUp: 1, noBeard: 1, tailLong: 1 } },
+  { id: 'montone', name: 'Ram', cost: 1200, body: 0xb8ada0, snout: 0x8f8478, horn: 0x8a6f52, perk: '🛡️ auto-shield every 45s', shape: { curlHorns: 1, bodyScale: 1.22, woolly: 1, earLen: 0.8, legThick: 1.25 } },
+  { id: 'bull', name: 'Bull', cost: 1800, body: 0x5a4632, snout: 0x77604a, horn: 0xf0e6d8, perk: '💥 smashes trees & rocks', shape: { bullHorns: 1, noseRing: 1, bodyScale: 1.28, legThick: 1.35, earLen: 0.8, noBeard: 1 } },
+  { id: 'alpaca', name: 'Alpaca', cost: 2500, body: 0xe8d8c2, snout: 0xcbb49b, horn: 0xd9cfc0, perk: '🪙 1.2× coins', shape: { neck: 0.55, earLen: 1.7, earUp: 1, hornScale: 0, topknot: 1, legLen: 1.35, noBeard: 1 } },
+  { id: 'horse', name: 'Horse', cost: 3500, body: 0xa06a3a, snout: 0x8a5a30, horn: 0xa06a3a, perk: '🐎 20% faster hops', shape: { longFace: 1, mane: 1, legLen: 1.3, hornScale: 0, earUp: 1, noBeard: 1, tailLong: 1 } },
   // progress unlock: free once your best run reaches 150
   { id: 'deer', name: 'Deer', bestUnlock: 150, body: 0xc9a06a, snout: 0xb8905a, horn: 0x8a6f52, perk: '🦅 eagle waits +2s', shape: { antlers: 1, spotted: 0xf0e6d8, legLen: 1.2, hornScale: 0, noBeard: 1 } },
   // site-exclusive: auto-unlocks only on crazygames.com domains
@@ -348,15 +348,15 @@ export function makeGoat(skinId = 'bianca') {
 
 // ---------- ACCESSORIES (cosmetic gear, one per slot: head / neck / back) ----------
 export const ACCESSORIES = [
-  { id: 'bowtie', name: 'Bow Tie', emoji: '🎀', cost: 150, slot: 'neck' },
-  { id: 'party', name: 'Party Hat', emoji: '🥳', cost: 200, slot: 'head' },
-  { id: 'scarf', name: 'Cozy Scarf', emoji: '🧣', cost: 300, slot: 'neck' },
-  { id: 'cowboy', name: 'Cowboy Hat', emoji: '🤠', cost: 400, slot: 'head' },
-  { id: 'flower', name: 'Flower Crown', emoji: '🌸', cost: 500, slot: 'head' },
-  { id: 'vest', name: 'Ranger Vest', emoji: '🦺', cost: 600, slot: 'back' },
-  { id: 'chain', name: 'Gold Chain', emoji: '📿', cost: 900, slot: 'neck' },
-  { id: 'cape', name: 'Hero Cape', emoji: '🦸', cost: 1200, slot: 'back' },
-  { id: 'crown', name: 'Royal Crown', emoji: '👑', cost: 2000, slot: 'head' },
+  { id: 'bowtie', name: 'Bow Tie', emoji: '🎀', cost: 60, slot: 'neck' },
+  { id: 'party', name: 'Party Hat', emoji: '🥳', cost: 90, slot: 'head' },
+  { id: 'scarf', name: 'Cozy Scarf', emoji: '🧣', cost: 120, slot: 'neck' },
+  { id: 'cowboy', name: 'Cowboy Hat', emoji: '🤠', cost: 180, slot: 'head' },
+  { id: 'flower', name: 'Flower Crown', emoji: '🌸', cost: 250, slot: 'head' },
+  { id: 'vest', name: 'Ranger Vest', emoji: '🦺', cost: 320, slot: 'back' },
+  { id: 'chain', name: 'Gold Chain', emoji: '📿', cost: 450, slot: 'neck' },
+  { id: 'cape', name: 'Hero Cape', emoji: '🦸', cost: 600, slot: 'back' },
+  { id: 'crown', name: 'Royal Crown', emoji: '👑', cost: 900, slot: 'head' },
 ];
 
 function makeAccessory(id) {

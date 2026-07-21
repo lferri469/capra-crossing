@@ -52,11 +52,24 @@
         <button id="tab-animals" class="shop-tab selected">🐐 ANIMALS</button>
         <button id="tab-gear" class="shop-tab">🎩 GEAR</button>
         <button id="tab-worlds" class="shop-tab">🌍 WORLDS</button>
+        <button id="tab-records" class="shop-tab">🏆 RECORDS</button>
       </div>
       <div id="skin-row"></div>
     </div>
     <p class="blink">or press ENTER</p>
     <img id="cg-badge" class="hidden" src="assets/branding/play_cg.png" alt="Play on CrazyGames">
+  </div>
+
+  <div id="daily-bonus-screen" class="overlay hidden">
+    <h2 id="db-title">🎁 DAILY BONUS</h2>
+    <p id="db-sub" class="subtitle">Pick a bush!</p>
+    <div id="db-bushes">
+      <button class="db-bush" data-i="0">🌳</button>
+      <button class="db-bush" data-i="1">🌳</button>
+      <button class="db-bush" data-i="2">🌳</button>
+    </div>
+    <p id="db-result" class="db-result hidden"></p>
+    <button id="db-close" class="hidden">▶ PLAY</button>
   </div>
 
   <div id="eagle-warning" class="hidden">🦅 EAGLE INCOMING — MOVE!</div>
