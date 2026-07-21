@@ -19,20 +19,23 @@ const HOP_TIME = 0.14;
 const HOP_HEIGHT = 0.55;
 
 // ---------------- CrazyGames SDK guards ----------------
+// Every call gates on sdkReady, which flips true ONLY when init() actually
+// resolves. Off-platform (plain localhost) init() rejects, so we never fire
+// game.*/data.* calls that would spam "CrazySDK is not initialized yet".
 const CG = () => window.CrazyGames?.SDK;
 let sdkReady = false;
-async function sdkInit() { try { await CG()?.init?.(); } catch (_) {} sdkReady = true; }
-function sdkGameplayStart() { try { CG()?.game?.gameplayStart?.(); } catch (_) {} }
-function sdkGameplayStop() { try { CG()?.game?.gameplayStop?.(); } catch (_) {} }
-function sdkHappy() { try { CG()?.game?.happytime?.(); } catch (_) {} }
-function sdkLoadingStart() { try { CG()?.game?.loadingStart?.(); } catch (_) {} }
-function sdkLoadingStop() { try { CG()?.game?.loadingStop?.(); } catch (_) {} }
+async function sdkInit() { try { await CG()?.init?.(); sdkReady = true; } catch (_) { sdkReady = false; } }
+function sdkGameplayStart() { if (!sdkReady) return; try { CG()?.game?.gameplayStart?.(); } catch (_) {} }
+function sdkGameplayStop() { if (!sdkReady) return; try { CG()?.game?.gameplayStop?.(); } catch (_) {} }
+function sdkHappy() { if (!sdkReady) return; try { CG()?.game?.happytime?.(); } catch (_) {} }
+function sdkLoadingStart() { if (!sdkReady) return; try { CG()?.game?.loadingStart?.(); } catch (_) {} }
+function sdkLoadingStop() { if (!sdkReady) return; try { CG()?.game?.loadingStop?.(); } catch (_) {} }
 // CrazyGames QA: game audio must be silent while an ad plays
 let adPlaying = false;
 function adStart() { adPlaying = true; try { bgMusic.pause(); } catch (_) {} }
 function adEnd() { adPlaying = false; if (musicOn && state !== 'title') bgMusic.play().catch(() => {}); }
 function sdkMidroll(cb) {
-  const sdk = CG();
+  const sdk = sdkReady && CG();
   if (sdk?.ad?.requestAd) {
     try {
       sdk.ad.requestAd('midgame', {
@@ -46,7 +49,7 @@ function sdkMidroll(cb) {
   cb();
 }
 function sdkRewarded(onDone, onFail) {
-  const sdk = CG();
+  const sdk = sdkReady && CG();
   if (sdk?.ad?.requestAd) {
     try {
       sdk.ad.requestAd('rewarded', {
@@ -67,14 +70,17 @@ function applyPlatformMute() {
   if (platformMuted) { try { bgMusic.pause(); } catch (_) {} }
   else if (musicOn && state !== 'title' && !adPlaying) { bgMusic.play().catch(() => {}); }
 }
-try {
-  const sdk = CG();
-  if (sdk?.game?.addSettingsChangeListener) {
-    sdk.game.addSettingsChangeListener((s) => { platformMuted = !!s?.muteAudio; applyPlatformMute(); });
-    platformMuted = !!sdk.game.settings?.muteAudio;
-  }
-} catch (_) {}
-const sdkReadyPromise = sdkInit();
+// registered only after init resolves — the SDK throws "not initialized yet" otherwise
+const sdkReadyPromise = sdkInit().then(() => {
+  try {
+    const sdk = CG();
+    if (sdk?.game?.addSettingsChangeListener) {
+      sdk.game.addSettingsChangeListener((s) => { platformMuted = !!s?.muteAudio; applyPlatformMute(); });
+      platformMuted = !!sdk.game.settings?.muteAudio;
+      applyPlatformMute();
+    }
+  } catch (_) {}
+});
 const onCrazyGames = /(^|\.)crazygames\.com$/.test(location.hostname);
 
 // ---------------- Persistence: CrazyGames Data Module (cross-device save) ----------------
@@ -415,6 +421,7 @@ const ui = {
   restart: document.getElementById('restart-btn'),
   reviveBtn: document.getElementById('revive-btn'),
   share: document.getElementById('share-btn'),
+  menu: document.getElementById('menu-btn'),
   eagleWarn: document.getElementById('eagle-warning'),
   skinRow: document.getElementById('skin-row'),
   titleCoins: document.getElementById('title-coins'),
@@ -440,6 +447,7 @@ function applyStaticI18n() {
   set('#revive-btn', t('revive_btn'));
   set('#restart-btn', t('try_again'));
   set('#share-btn', t('share_btn'));
+  set('#menu-btn', t('menu_btn'));
   set('.hint-small', t('or_enter'));
   set('#tab-animals', `🐐 ${t('tab_animals')}`);
   set('#tab-gear', `🎩 ${t('tab_gear')}`);
@@ -1515,6 +1523,18 @@ function restartFromMenu() {
   }
 }
 
+// back to the title screen from game over: lets the player open the shop,
+// change mode, or pick a new starting world between runs
+function backToMenu() {
+  ui.over.classList.add('hidden');
+  postfx.darken = 0;
+  timeScale = 1;
+  state = 'title';
+  resetWorld();          // rebuild with any freshly-bought skin/world/gear equipped
+  renderShop();
+  ui.title.classList.remove('hidden');
+}
+
 function setMode(m) {
   mode = m;
   ui.modeEndless.classList.toggle('selected', m === 'endless');
@@ -1548,6 +1568,7 @@ window.addEventListener('keydown', (e) => {
 });
 ui.restart.addEventListener('click', () => { audio(); restartFromMenu(); });
 ui.reviveBtn.addEventListener('click', (e) => { e.stopPropagation(); audio(); revive(); });
+ui.menu.addEventListener('click', (e) => { e.stopPropagation(); audio(); backToMenu(); });
 
 // bring the goat back on the nearest grass row at a free column
 function respawnPlayer(invuln = 2.5) {
@@ -2021,10 +2042,11 @@ window.__dbg = {
   step: (dt = 1 / 60) => frame(dt),   // manual tick for headless/automated tests
 };
 
-// Boot: branded splash + preload GLB library + wait for the SDK (so the Data
-// Module is ready before the first save read), then title with backdrop
+// Boot: branded splash + preload GLB library, then title with backdrop.
+// init() must resolve before ANY other SDK call (loadingStart/data/etc.),
+// otherwise the SDK logs "CrazySDK is not initialized yet".
 const bootT = performance.now();
-sdkLoadingStart();
+sdkReadyPromise.then(() => sdkLoadingStart());
 Promise.all([sdkReadyPromise, loadLibrary()]).then(() => {
   sdkLoadingStop();
   loadPersistedState();

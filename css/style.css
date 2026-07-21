@@ -366,6 +366,25 @@ html, body {
   box-shadow: 0 1px 0 #3a55a8;
 }
 
+#menu-btn {
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 800;
+  padding: 11px 28px;
+  border: 0;
+  border-radius: 12px;
+  cursor: pointer;
+  background: rgba(255,255,255,.14);
+  color: #fff;
+  box-shadow: 0 4px 0 rgba(0,0,0,.3);
+  transition: transform .08s;
+}
+
+#menu-btn:active {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 rgba(0,0,0,.3);
+}
+
 #toast {
   position: absolute;
   bottom: 8%;

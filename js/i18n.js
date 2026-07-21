@@ -31,6 +31,7 @@ const S = {
   revive_btn: ['📺 WATCH AD · REVIVE', '📺 GUARDA VIDEO · RINASCI', '📺 VER ANUNCIO · REVIVIR', '📺 PUB · REVIVRE', '📺 WERBUNG · WEITERSPIELEN', '📺 VER ANÚNCIO · REVIVER', '📺 РЕКЛАМА · ВОЗРОДИТЬСЯ', '📺 OBEJRZYJ REKLAMĘ · WSKRZEŚ'],
   try_again: ['TRY AGAIN', 'RIPROVA', 'REINTENTAR', 'REJOUER', 'NOCHMAL', 'TENTAR DE NOVO', 'ЕЩЁ РАЗ', 'JESZCZE RAZ'],
   share_btn: ['📣 CHALLENGE FRIENDS', '📣 SFIDA GLI AMICI', '📣 RETA A TUS AMIGOS', '📣 DÉFIE TES AMIS', '📣 FREUNDE HERAUSFORDERN', '📣 DESAFIE AMIGOS', '📣 ВЫЗОВИ ДРУЗЕЙ', '📣 RZUĆ WYZWANIE ZNAJOMYM'],
+  menu_btn: ['🏠 MENU & SHOP', '🏠 MENU & NEGOZIO', '🏠 MENÚ Y TIENDA', '🏠 MENU & BOUTIQUE', '🏠 MENÜ & SHOP', '🏠 MENU & LOJA', '🏠 МЕНЮ И МАГАЗИН', '🏠 MENU & SKLEP'],
   or_enter: ['or press ENTER', 'o premi INVIO', 'o pulsa ENTER', 'ou appuie sur ENTRÉE', 'oder ENTER drücken', 'ou pressione ENTER', 'или нажми ENTER', 'lub naciśnij ENTER'],
   eagle_warn: ['🦅 EAGLE INCOMING — MOVE!', "🦅 ARRIVA L'AQUILA — MUOVITI!", '🦅 ¡ÁGUILA A LA VISTA — MUÉVETE!', "🦅 L'AIGLE ARRIVE — BOUGE !", '🦅 ADLER IM ANFLUG — BEWEG DICH!', '🦅 ÁGUIA CHEGANDO — MEXA-SE!', '🦅 ОРЁЛ ЛЕТИТ — ДВИГАЙСЯ!', '🦅 ORZEŁ NADLATUJE — RUSZAJ SIĘ!'],
   best: ['BEST', 'RECORD', 'RÉCORD', 'RECORD', 'REKORD', 'RECORDE', 'РЕКОРД', 'REKORD'],
