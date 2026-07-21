@@ -1047,6 +1047,39 @@ function buildBackdrop() {
   scene.add(backdrop);
 }
 
+// ---------------- Ground floor (fills any gap at screen edges with biome ground,
+// so the sky background never shows through in the near corners) ----------------
+let floor = null;
+const _flA = new THREE.Color(), _flB = new THREE.Color();
+// pure grass-color lerp (NO genRand — safe to call every frame without perturbing
+// the daily-mode world seed), mirrors biomeAt's grass band math
+function groundColorAt(r) {
+  const BAND = 100, FADE = 20;
+  const rr = Math.max(r, 0);
+  const i = (Math.floor(rr / BAND) + effStartBiome()) % BIOMES.length;
+  const j = (i + 1) % BIOMES.length;
+  const local = rr % BAND;
+  const t = local < BAND - FADE ? 0 : (local - (BAND - FADE)) / FADE;
+  return _flA.setHex(BIOMES[i].grassB).lerp(_flB.setHex(BIOMES[j].grassB), t);
+}
+function buildFloor() {
+  if (floor) return;
+  floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(200, 200),
+    new THREE.MeshLambertMaterial({ color: 0x9ccc68 })
+  );
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = -0.35;          // under the deepest lane box (river water bottom ~-0.32)
+  floor.receiveShadow = false;       // cheap: it only shows in edge gaps
+  floor.renderOrder = -1;            // draw before lanes
+  scene.add(floor);
+}
+function updateFloor() {
+  if (!floor) return;
+  floor.position.z = -camRow;        // follow the camera so gaps are always covered
+  floor.material.color.copy(groundColorAt(Math.max(score, 0)));
+}
+
 // ---------------- Cloud shadows (soft dark patches drifting over the ground) ----------------
 const clouds = [];
 function buildClouds() {
@@ -1480,6 +1513,7 @@ function resetWorld() {
   if (eagle) { scene.remove(eagle.g); eagle = null; }
   if (!backdrop || backdropBiome !== effStartBiome()) buildBackdrop();
   if (!clouds.length) buildClouds();
+  buildFloor();
   player = makePlayer();
   score = 0; coins = 0; newRecord = false; nearMisses = 0; runTime = 0; lastBiomeIdx = effStartBiome();
   camRow = 0; minRow = -2; idleTimer = 0; deathAnim = null;
@@ -2029,6 +2063,7 @@ function frame(rawDt) {
   updateClouds(rawDt);
   updateDayCycle(rawDt);
   updateCamera(rawDt);
+  updateFloor();
   postfx.render(scene, camera, rawDt);
 }
 
