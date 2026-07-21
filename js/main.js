@@ -422,6 +422,7 @@ const ui = {
   reviveBtn: document.getElementById('revive-btn'),
   share: document.getElementById('share-btn'),
   menu: document.getElementById('menu-btn'),
+  play: document.getElementById('play-btn'),
   eagleWarn: document.getElementById('eagle-warning'),
   skinRow: document.getElementById('skin-row'),
   titleCoins: document.getElementById('title-coins'),
@@ -441,6 +442,7 @@ function applyStaticI18n() {
   const hints = document.querySelectorAll('.controls-hint span');
   if (hints[0]) hints[0].textContent = t('hint_keys');
   if (hints[1]) hints[1].textContent = t('hint_swipe');
+  set('#play-btn', t('play_btn'));
   set('.blink', t('press_start'));
   set('.splash-text', t('tagline'));
   set('#eagle-warning', t('eagle_warn'));
@@ -1560,12 +1562,15 @@ const KEYMAP = {
 window.addEventListener('keydown', (e) => {
   if (KEYMAP[e.code]) e.preventDefault();
   audio();
-  if (state === 'title') { startGame(); return; }
+  // on the title the game starts only from the PLAY button (or Enter) — arrow/other
+  // keys must not launch it, so the menu/shop stays usable
+  if (state === 'title') { if (e.code === 'Enter' || e.code === 'Space') startGame(); return; }
   if (state === 'dead') { if (e.code === 'Enter') restartFromMenu(); return; }
   if (e.code === 'Space') { bleat(); return; }
   const m = KEYMAP[e.code];
   if (m) tryHop(m[0], m[1]);
 });
+ui.play.addEventListener('click', (e) => { e.stopPropagation(); audio(); startGame(); });
 ui.restart.addEventListener('click', () => { audio(); restartFromMenu(); });
 ui.reviveBtn.addEventListener('click', (e) => { e.stopPropagation(); audio(); revive(); });
 ui.menu.addEventListener('click', (e) => { e.stopPropagation(); audio(); backToMenu(); });
@@ -1619,33 +1624,24 @@ function revive() {
 }
 ui.share.addEventListener('click', (e) => { e.stopPropagation(); shareScore(); });
 
-// controls/menus where a touch must NOT start a run and must be free to scroll
-const onMenuControl = (el) => !!(el?.closest?.('#skin-shop') || el?.closest?.('#mode-row') ||
-  el?.closest?.('#mute-btn') || el?.closest?.('.go-buttons') || el?.closest?.('#menu-btn'));
-
 let touchStart = null;
-// passive: lets the browser scroll the overlay/shop natively on title & game over
+// passive: lets the browser scroll the overlay/shop natively on title & game over.
+// The title no longer starts on tap — only the PLAY button does — so the whole
+// menu/shop is freely tappable and scrollable on both web and mobile.
 window.addEventListener('touchstart', (e) => {
   audio();
-  touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: performance.now(), target: e.target };
+  if (state !== 'playing') { touchStart = null; return; }
+  touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: performance.now() };
 }, { passive: true });
 window.addEventListener('touchend', (e) => {
-  if (!touchStart) return;
+  if (state !== 'playing' || !touchStart) return;
   const c = e.changedTouches[0];
   const dx = c.clientX - touchStart.x, dy = c.clientY - touchStart.y;
   const adx = Math.abs(dx), ady = Math.abs(dy);
-  const isTap = Math.max(adx, ady) < 18;
-  const startedOnControl = onMenuControl(touchStart.target);
   touchStart = null;
-  if (state === 'title') {
-    // only a genuine tap on empty space starts — a swipe scrolls the menu/shop,
-    // a tap on a shop card / mode button is handled by that element's own click
-    if (isTap && !startedOnControl) startGame();
-  } else if (state === 'playing') {
-    if (isTap) tryHop(0, 1);                          // tap = forward
-    else if (adx > ady) tryHop(dx > 0 ? 1 : -1, 0);
-    else tryHop(0, dy < 0 ? 1 : -1);
-  }
+  if (Math.max(adx, ady) < 18) tryHop(0, 1);          // tap = forward
+  else if (adx > ady) tryHop(dx > 0 ? 1 : -1, 0);
+  else tryHop(0, dy < 0 ? 1 : -1);
 }, { passive: true });
 // block page scroll ONLY during gameplay; on title/game over the overlay scrolls freely
 window.addEventListener('touchmove', (e) => { if (state === 'playing') e.preventDefault(); }, { passive: false });
